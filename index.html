@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student Performance Prediction System</title>
+  <meta name="description" content="Student Performance Prediction System predicting expected marks, grade, category, pass probability, trend, weak/strong areas, and personalized recommendations.">
+  <link rel="stylesheet" href="css/styles.css">
+  <!-- Chart.js for Visual Data Analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <!-- SVG Gradient Definitions -->
+  <svg style="width:0;height:0;position:absolute;" aria-hidden="true">
+    <defs>
+      <linearGradient id="gauge-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#6366f1" />
+        <stop offset="50%" stop-color="#8b5cf6" />
+        <stop offset="100%" stop-color="#10b981" />
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <div class="app-container">
+    
+    <!-- Top Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3zM5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82z"/>
+          </svg>
+        </div>
+        <div class="brand-title">
+          <h1>Student Performance Prediction System</h1>
+        </div>
+
+      </div>
+
+      <!-- Mode Switcher & Links -->
+      <div style="display:flex; align-items:center; gap:1.25rem;">
+        <div class="mode-switcher" id="mode-toggle">
+          <button type="button" class="mode-btn active" id="btn-mode-student" onclick="switchMode('student')">
+            <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+            Student View
+          </button>
+          <button type="button" class="mode-btn" id="btn-mode-teacher" onclick="switchMode('teacher')">
+            <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24"><path d="M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82zM12 3L1 9l11 6 9-4.91V17h2V9L12 3z"/></svg>
+            Teacher / Counselor View
+          </button>
+        </div>
+
+        <div class="status-badge" id="backend-status">
+          <span class="status-dot"></span>
+          <span id="status-text">Connected</span>
+
+        </div>
+      </div>
+    </header>
+
+    <!-- Stat Cards Banner -->
+    <section class="stats-banner">
+      <div class="stat-card">
+        <div class="stat-header">
+          <span>Model Accuracy</span>
+          <svg width="16" height="16" fill="var(--accent-emerald)" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+        </div>
+        <div class="stat-value" id="metric-accuracy">93.8%</div>
+        <div class="stat-sub">Statistical Classification</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-header">
+          <span>Regression R² Score</span>
+          <svg width="16" height="16" fill="var(--primary)" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+        </div>
+        <div class="stat-value" id="metric-r2">0.942</div>
+        <div class="stat-sub">Mean Abs Error: 1.82 pts</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-header">
+          <span>Cohort Dataset</span>
+          <svg width="16" height="16" fill="var(--accent-cyan)" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+        </div>
+        <div class="stat-value" id="metric-samples">1,500</div>
+        <div class="stat-sub">Validated Student Records</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-header">
+          <span>Avg Benchmark Score</span>
+          <svg width="16" height="16" fill="var(--accent-amber)" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        </div>
+        <div class="stat-value" id="metric-avg-score">74.6</div>
+        <div class="stat-sub">Passing Threshold: 50.0</div>
+      </div>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="tab-predictor">
+        <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/></svg>
+        Predictor Engine
+      </button>
+      <button class="tab-btn" data-tab="tab-simulator">
+        <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9z"/></svg>
+        "What-If" Simulator
+      </button>
+      <button class="tab-btn" data-tab="tab-analytics">
+        <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
+        Analytics & Radar Charts
+      </button>
+      <button class="tab-btn" data-tab="tab-batch">
+        <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+        Batch Predictor & CSV
+      </button>
+      <a href="whatsapp_system/index.html" class="tab-btn" style="text-decoration:none; color:inherit; display:inline-flex; align-items:center; gap:0.4rem;">
+        <svg width="18" height="18" fill="#25D366" viewBox="0 0 24 24"><path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.964 9.964 0 001.333 4.993L2 22l5.233-1.37a9.935 9.935 0 004.779 1.218h.004c5.505 0 9.988-4.478 9.989-9.984.001-2.669-1.036-5.176-2.923-7.062A9.924 9.924 0 0012.012 2zm5.856 14.152c-.247.697-1.442 1.332-1.996 1.416-.503.076-1.155.109-1.857-.116-.431-.137-.982-.317-1.696-.628-2.993-1.302-4.945-4.341-5.096-4.542-.15-.201-1.221-1.625-1.221-3.099 0-1.474.772-2.199 1.047-2.496.275-.297.601-.371.802-.371.201 0 .401.002.576.01.188.008.439-.07.687.527.25.599.851 2.078.926 2.229.075.151.125.326.025.526-.1.201-.15.326-.299.501-.15.175-.316.392-.451.526-.15.15-.307.314-.132.614.175.301.777 1.282 1.669 2.076 1.147 1.022 2.115 1.339 2.416 1.49.301.15.476.125.651-.075.175-.201.751-.876.951-1.176.2-.301.401-.251.676-.151.275.1.1.752.876 2.578 1.776.826.9.926 1.051 1.026 1.251.1.201.1 1.152-.147 1.849z"/></svg>
+        WhatsApp Link Gateway ➔
+      </a>
+    </nav>
+
+
+    <!-- Tab 1: Single Student Predictor -->
+    <div class="tab-content active" id="tab-predictor">
+      <div class="predictor-grid">
+        
+        <!-- Input Form -->
+        <div class="glass-panel">
+          <div class="panel-header">
+            <h2>
+              <svg width="22" height="22" fill="var(--primary)" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+              Academic & Behavioral Information
+            </h2>
+          </div>
+
+          <!-- Quick Load Presets -->
+          <div class="presets-bar">
+            <span class="presets-label">Quick Presets:</span>
+            <button type="button" class="preset-chip" onclick="loadPreset('top')">⭐ Top Achiever</button>
+            <button type="button" class="preset-chip" onclick="loadPreset('avg')">📊 Average Student</button>
+            <button type="button" class="preset-chip" onclick="loadPreset('risk')">⚠️ At Risk</button>
+          </div>
+
+          <!-- Validation Alert Container -->
+          <div id="form-validation-alert" style="display:none; background:rgba(244,63,94,0.15); border:1px solid rgba(244,63,94,0.4); padding:0.75rem 1rem; border-radius:var(--radius-sm); margin-bottom:1rem; color:#fecdd3; font-size:0.85rem;">
+            ⚠️ Please correct invalid form inputs before predicting.
+          </div>
+
+          <form id="prediction-form" novalidate>
+            <div class="form-grid">
+              
+              <!-- Academic Factors -->
+              <div class="form-group">
+                <div class="form-label">
+                  <span>Weekly Study Hours (1-40)</span>
+                  <span class="val-badge" id="val-study">18 hrs</span>
+                </div>
+                <input type="range" min="1" max="40" step="1" value="18" class="range-slider" id="input-study" oninput="updateVal('study', this.value + ' hrs')">
+                <div class="validation-hint" id="hint-study">Must be between 1 and 40 hours.</div>
+              </div>
+
+              <div class="form-group">
+                <div class="form-label">
+                  <span>Class Attendance Rate (%)</span>
+                  <span class="val-badge" id="val-attendance">85%</span>
+                </div>
+                <input type="range" min="45" max="100" step="1" value="85" class="range-slider" id="input-attendance" oninput="updateVal('attendance', this.value + '%')">
+                <div class="validation-hint" id="hint-attendance">Attendance must be 45% to 100%.</div>
+              </div>
+
+              <div class="form-group">
+                <div class="form-label">
+                  <span>Previous Score / GPA Marks (30-100)</span>
+                  <span class="val-badge" id="val-prev">75</span>
+                </div>
+                <input type="range" min="30" max="100" step="1" value="75" class="range-slider" id="input-prev" oninput="updateVal('prev', this.value)">
+                <div class="validation-hint" id="hint-prev">Previous score must be between 30 and 100.</div>
+              </div>
+
+              <div class="form-group">
+                <div class="form-label">
+                  <span>Assignment Completion Rate (%)</span>
+                  <span class="val-badge" id="val-assign">85%</span>
+                </div>
+                <input type="range" min="40" max="100" step="1" value="85" class="range-slider" id="input-assign" oninput="updateVal('assign', this.value + '%')">
+              </div>
+
+              <!-- Behavioral & Wellness Factors -->
+              <div class="form-group">
+                <div class="form-label">
+                  <span>Behavioral Discipline Rating (1-10)</span>
+                  <span class="val-badge" id="val-discipline">8</span>
+                </div>
+                <input type="range" min="1" max="10" step="1" value="8" class="range-slider" id="input-discipline" oninput="updateVal('discipline', this.value)">
+              </div>
+
+              <div class="form-group">
+                <div class="form-label">
+                  <span>Nightly Sleep Hours (4-10)</span>
+                  <span class="val-badge" id="val-sleep">7.5 hrs</span>
+                </div>
+                <input type="range" min="4" max="10" step="0.5" value="7.5" class="range-slider" id="input-sleep" oninput="updateVal('sleep', this.value + ' hrs')">
+              </div>
+
+              <div class="form-group">
+                <div class="form-label">
+                  <span>Tutoring Sessions / Month</span>
+                  <span class="val-badge" id="val-tutoring">2</span>
+                </div>
+                <input type="range" min="0" max="6" step="1" value="2" class="range-slider" id="input-tutoring" oninput="updateVal('tutoring', this.value)">
+              </div>
+
+              <div class="form-group">
+                <div class="form-label">
+                  <span>Self-Reported Stress (1-10)</span>
+                  <span class="val-badge" id="val-stress">4</span>
+                </div>
+                <input type="range" min="1" max="10" step="1" value="4" class="range-slider" id="input-stress" oninput="updateVal('stress', this.value)">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Parent Education Level</label>
+                <select class="form-select" id="input-parent-edu">
+                  <option value="0">High School Diploma</option>
+                  <option value="1" selected>Associate / College Degree</option>
+                  <option value="2">Bachelor's Degree</option>
+                  <option value="3">Master's / Doctorate</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <div class="switch-group" style="margin-top:1.5rem;">
+                  <span style="font-size:0.85rem; font-weight:600; color:var(--text-muted);">Extracurricular Participation</span>
+                  <input type="checkbox" id="input-extra" checked style="width:18px; height:18px; accent-color:var(--primary);">
+                </div>
+              </div>
+
+            </div>
+
+            <button type="submit" class="btn-submit">
+              <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+              Generate Performance Predictions
+            </button>
+          </form>
+        </div>
+
+        <!-- Output Panel with All 8 Required Predictions -->
+        <div class="prediction-results">
+          
+          <!-- Core Score & Category Display -->
+          <div class="score-display-card">
+            
+            <div style="display:flex; justify-content:space-between; width:100%; align-items:center; margin-bottom:0.5rem;">
+              <span class="category-badge category-good" id="pred-category-pill">Category: Good</span>
+              <span class="grade-pill primary" id="pred-grade-pill">GRADE B (GPA 3.0)</span>
+            </div>
+
+            <div class="score-gauge-container">
+              <svg class="score-gauge-svg" viewBox="0 0 160 160">
+                <circle class="score-gauge-bg" cx="80" cy="80" r="70" />
+                <circle class="score-gauge-fill" id="gauge-circle" cx="80" cy="80" r="70" />
+              </svg>
+              <div class="score-gauge-text">
+                <span class="score-num" id="pred-score-num">--</span>
+                <span class="score-max">% PERCENTAGE</span>
+              </div>
+            </div>
+
+            <!-- Expected Marks (100 & 500 scale) -->
+            <div class="marks-container">
+              <div class="marks-chip">
+                <div class="marks-chip-title">Expected Marks (/100)</div>
+                <div class="marks-chip-val" id="pred-marks-100">--</div>
+              </div>
+              <div class="marks-chip">
+                <div class="marks-chip-title">Expected Marks (/500)</div>
+                <div class="marks-chip-val" id="pred-marks-500">--</div>
+              </div>
+            </div>
+
+            <div class="confidence-note" id="pred-status-text" style="margin-top:0.75rem;">
+              Evaluating multi-factor statistical parameters...
+            </div>
+          </div>
+
+          <!-- 5. Pass/Fail Probability Progress Bar -->
+          <div class="probability-card">
+            <div class="prob-header">
+              <span>Pass / Fail Probability Breakdown</span>
+              <span style="font-weight:700;" id="pred-pass-status-text">Status: PASS</span>
+            </div>
+            <div class="prob-bar-container">
+              <div class="prob-fill-pass" id="prob-bar-pass" style="width: 85%;"></div>
+              <div class="prob-fill-fail" id="prob-bar-fail" style="width: 15%;"></div>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-top:0.4rem; font-size:0.78rem; color:var(--text-muted);">
+              <span id="prob-pass-text" style="color:var(--accent-emerald); font-weight:600;">Pass Probability: 85.0%</span>
+              <span id="prob-fail-text" style="color:var(--accent-rose); font-weight:600;">Fail Risk: 15.0%</span>
+            </div>
+          </div>
+
+          <!-- 6. Performance Trend Analysis Card -->
+          <div class="trend-card">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:0.9rem; font-weight:600;">Performance Trend & Trajectory</span>
+              <span class="trend-badge trend-improving" id="trend-badge-pill">Improving ↑</span>
+            </div>
+            <div style="font-size:0.82rem; color:var(--text-muted); margin-top:0.4rem;" id="trend-description-text">
+              Projected trajectory: Baseline (75.0) ➔ Expected (84.5) ➔ Next Term Target (88.0)
+            </div>
+          </div>
+
+          <!-- 7. Weak and Strong Areas Grid -->
+          <div class="competency-grid">
+            <div class="competency-box strong">
+              <div class="competency-title" style="color:var(--accent-emerald);">
+                <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm1 14h-2v-2h2v2zm0-4h-2V8h2v4z"/></svg>
+                Strong Areas
+              </div>
+              <div class="area-list" id="strong-areas-list">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+
+            <div class="competency-box weak">
+              <div class="competency-title" style="color:var(--accent-rose);">
+                <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                Weak & Vulnerable Areas
+              </div>
+              <div class="area-list" id="weak-areas-list">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <!-- 8. Personalized Study Recommendations -->
+          <div class="glass-panel" style="margin-top:1rem; padding:1.25rem;">
+            <h3 style="font-family:var(--font-heading); font-size:1rem; margin-bottom:0.75rem; display:flex; align-items:center; gap:0.5rem;">
+              <svg width="18" height="18" fill="var(--primary)" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+              Personalized Study & Habit Recommendations
+            </h3>
+            <div class="recommendations-list" id="recommendations-container">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Teacher / Counselor Communication Trigger -->
+          <div class="glass-panel" id="attendance-action-panel" style="padding:1.25rem; margin-top:1rem;">
+            <h3 style="font-family:var(--font-heading); font-size:0.95rem; margin-bottom:0.6rem; display:flex; align-items:center; gap:0.5rem;">
+              <svg width="18" height="18" fill="var(--accent-rose)" viewBox="0 0 24 24"><path d="M20 15.5c-1.25 0-2.45-.2-3.57-.57-.35-.11-.74-.03-1.02.24l-2.2 2.2c-2.83-1.44-5.15-3.75-6.59-6.59l2.2-2.21c.28-.26.36-.65.25-1C8.7 6.45 8.5 5.25 8.5 4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1z"/></svg>
+              Teacher Advisory & Parent Communication Trigger
+            </h3>
+            <div id="attendance-actions-container" style="display:flex; flex-direction:column; gap:0.6rem;">
+              <!-- Call & Email action triggers rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- WhatsApp Link Share Panel -->
+          <div class="glass-panel" style="padding:1.25rem; margin-top:1rem; border:1px solid rgba(37, 211, 102, 0.3); background:rgba(37, 211, 102, 0.05);">
+            <h3 style="font-family:var(--font-heading); font-size:0.95rem; margin-bottom:0.6rem; display:flex; align-items:center; gap:0.5rem; color:#25D366;">
+              <svg width="18" height="18" fill="#25D366" viewBox="0 0 24 24"><path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.964 9.964 0 001.333 4.993L2 22l5.233-1.37a9.935 9.935 0 004.779 1.218h.004c5.505 0 9.988-4.478 9.989-9.984.001-2.669-1.036-5.176-2.923-7.062A9.924 9.924 0 0012.012 2zm5.856 14.152c-.247.697-1.442 1.332-1.996 1.416-.503.076-1.155.109-1.857-.116-.431-.137-.982-.317-1.696-.628-2.993-1.302-4.945-4.341-5.096-4.542-.15-.201-1.221-1.625-1.221-3.099 0-1.474.772-2.199 1.047-2.496.275-.297.601-.371.802-.371.201 0 .401.002.576.01.188.008.439-.07.687.527.25.599.851 2.078.926 2.229.075.151.125.326.025.526-.1.201-.15.326-.299.501-.15.175-.316.392-.451.526-.15.15-.307.314-.132.614.175.301.777 1.282 1.669 2.076 1.147 1.022 2.115 1.339 2.416 1.49.301.15.476.125.651-.075.175-.201.751-.876.951-1.176.2-.301.401-.251.676-.151.275.1.1.752.876 2.578 1.776.826.9.926 1.051 1.026 1.251.1.201.1 1.152-.147 1.849z"/></svg>
+              WhatsApp Performance Link Sharer
+            </h3>
+            <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:0.75rem;">
+              Generate a shareable pre-filled WhatsApp report link with predicted marks, grade, and recommendations for parents or academic advisors.
+            </p>
+            <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+              <button type="button" class="btn btn-primary" onclick="shareWhatsAppReport()" style="background:linear-gradient(135deg, #25D366, #128C7E); border:none;">
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                Share via WhatsApp Link
+              </button>
+              <a href="whatsapp_system/index.html" class="btn btn-secondary" style="text-decoration:none;">
+                Open WhatsApp Gateway ➔
+              </a>
+            </div>
+          </div>
+
+
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Tab 2: What-If Simulator -->
+    <div class="tab-content" id="tab-simulator">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2>
+            <svg width="22" height="22" fill="var(--accent-cyan)" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/></svg>
+            Interactive "What-If" Scenario Simulator
+          </h2>
+          <span style="font-size:0.85rem; color:var(--text-muted);">Simulate live impact of habit changes in real-time</span>
+        </div>
+
+        <div class="predictor-grid">
+          <div>
+            <p style="font-size:0.9rem; color:var(--text-muted); margin-bottom:1.5rem;">
+              Adjust the habit sliders below to immediately see real-time score updates, grade shifts, pass probability changes, and performance category transitions.
+            </p>
+            
+            <div class="form-group" style="margin-bottom:1.25rem;">
+              <div class="form-label">
+                <span>Simulated Weekly Study Hours</span>
+                <span class="val-badge" id="sim-val-study">20 hrs</span>
+              </div>
+              <input type="range" min="1" max="40" step="1" value="20" class="range-slider" id="sim-study" oninput="runLiveSimulation()">
+            </div>
+
+            <div class="form-group" style="margin-bottom:1.25rem;">
+              <div class="form-label">
+                <span>Simulated Attendance Rate</span>
+                <span class="val-badge" id="sim-val-att">90%</span>
+              </div>
+              <input type="range" min="45" max="100" step="1" value="90" class="range-slider" id="sim-att" oninput="runLiveSimulation()">
+            </div>
+
+            <div class="form-group" style="margin-bottom:1.25rem;">
+              <div class="form-label">
+                <span>Simulated Nightly Sleep</span>
+                <span class="val-badge" id="sim-val-sleep">8.0 hrs</span>
+              </div>
+              <input type="range" min="4" max="10" step="0.5" value="8.0" class="range-slider" id="sim-sleep" oninput="runLiveSimulation()">
+            </div>
+
+            <div class="form-group" style="margin-bottom:1.25rem;">
+              <div class="form-label">
+                <span>Simulated Stress Level</span>
+                <span class="val-badge" id="sim-val-stress">3</span>
+              </div>
+              <input type="range" min="1" max="10" step="1" value="3" class="range-slider" id="sim-stress" oninput="runLiveSimulation()">
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; justify-content:center; align-items:center; background:rgba(15,23,42,0.6); padding:2rem; border-radius:var(--radius-md); border:1px solid var(--border-color);">
+            <div style="font-size:0.9rem; color:var(--text-muted); margin-bottom:0.5rem;">Simulated Expected Marks</div>
+            <div style="font-family:var(--font-heading); font-size:4rem; font-weight:800; color:var(--accent-cyan);" id="sim-output-score">86.4</div>
+            <div class="category-badge category-excellent" id="sim-output-category" style="margin-top:0.5rem;">Category: Excellent</div>
+            <div style="font-size:0.85rem; color:var(--accent-emerald); margin-top:1rem;" id="sim-output-delta">
+              ▲ +8.2 Points increase vs baseline
+            </div>
+            <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.4rem;" id="sim-output-prob">
+              Pass Probability: 96.5%
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Performance Insights & Visual Analytics (Charts) -->
+    <div class="tab-content" id="tab-analytics">
+      <div class="charts-grid">
+        
+        <!-- Chart 1: Strong vs Weak Competency Radar Chart -->
+        <div class="chart-card">
+          <div class="panel-header">
+            <h3>Student Competency Profile</h3>
+            <span style="font-size:0.75rem; color:var(--text-muted);">Radar Strength/Weakness Analysis</span>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="chart-radar"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart 2: Performance Trajectory Line Chart -->
+        <div class="chart-card">
+          <div class="panel-header">
+            <h3>Performance Trajectory Trend</h3>
+            <span style="font-size:0.75rem; color:var(--text-muted);">Past Exam ➔ Current ➔ Projected</span>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="chart-trend"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart 3: Cohort Grade Distribution Doughnut -->
+        <div class="chart-card">
+          <div class="panel-header">
+            <h3>Cohort Grade Distribution</h3>
+            <span style="font-size:0.75rem; color:var(--text-muted);">1,500 Evaluated Students</span>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="chart-grade-dist"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart 4: Feature Importance Weights Bar Chart -->
+        <div class="chart-card">
+          <div class="panel-header">
+            <h3>Feature Importance Weights</h3>
+            <span style="font-size:0.75rem; color:var(--text-muted);">Feature Weighting Engine</span>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="chart-feature-importance"></canvas>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Tab 4: Batch Predictor & CSV -->
+    <div class="tab-content" id="tab-batch">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2>Batch Student Prediction & CSV Analytics</h2>
+          <div style="display:flex; gap:0.75rem;">
+            <button class="btn-secondary" onclick="downloadSampleCSV()">
+              <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+              Download Sample CSV
+            </button>
+            <button class="btn-secondary" onclick="exportResultsCSV()">
+              <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>
+              Export Results
+            </button>
+          </div>
+        </div>
+
+        <!-- CSV Drop Zone -->
+        <div style="border:2px dashed var(--border-highlight); border-radius:var(--radius-md); padding:2rem; text-align:center; background:rgba(15,23,42,0.4); margin-bottom:1.5rem;" id="drop-zone">
+          <svg width="48" height="48" fill="var(--primary)" viewBox="0 0 24 24" style="margin-bottom:0.5rem;"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+          <h4 style="font-family:var(--font-heading); font-size:1.1rem;">Upload Student Batch CSV File</h4>
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">Upload CSV with headers: study_hours, attendance, previous_score, assignment_completion, discipline_rating, sleep_hours, etc.</p>
+          <input type="file" id="csv-file-input" accept=".csv" style="display:none;" onchange="handleCSVUpload(event)">
+          <button class="btn-secondary" onclick="document.getElementById('csv-file-input').click()">Browse CSV Files</button>
+        </div>
+
+        <!-- Batch Results Table -->
+        <div class="table-responsive">
+          <table class="custom-table" id="batch-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Student ID</th>
+                <th>Study Hours</th>
+                <th>Attendance</th>
+                <th>Previous Score</th>
+                <th>Expected Marks</th>
+                <th>Grade</th>
+                <th>Category</th>
+                <th>Pass Prob</th>
+                <th>Action Status</th>
+              </tr>
+            </thead>
+            <tbody id="batch-table-body">
+              <tr>
+                <td colspan="10" style="text-align:center; color:var(--text-muted); padding:2rem;">
+                  No batch dataset loaded. Click "Download Sample CSV" or upload a file to evaluate predictions.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
