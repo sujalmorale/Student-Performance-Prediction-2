@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
   checkBackendConnection();
   loadInitialPrediction();
   runLiveSimulation();
+  initVoiceAssistant();
 });
 
 // Mode Switcher (Student vs Teacher)
@@ -430,6 +431,10 @@ async function submitPredictionForm() {
 
   lastPredictionResult = result;
   renderPredictionResult(result);
+
+  if (document.getElementById('auto-speak-toggle')?.checked) {
+    speakPredictionResults(false);
+  }
 }
 
 function loadInitialPrediction() {
@@ -947,5 +952,479 @@ function shareWhatsAppReport() {
 
   const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
   window.open(waUrl, '_blank');
+}
+
+/* ==========================================================================
+   AI VOICE ASSISTANT ("NOVA") & AUDIO SYNTHESIS ENGINE
+   Features:
+   - "Hello" Voice Greetings & Conversational Persona
+   - Speech Synthesis (Read Aloud Predictions & Recommendations)
+   - Web Speech Recognition (Voice Commands & Control)
+   - Real-time Canvas Waveform Visualizer
+   - Synthesizer Audio Effects & Feedback
+   ========================================================================== */
+
+let voiceAssistantOpen = false;
+let isSpeaking = false;
+let isListening = false;
+let speechRecognitionInstance = null;
+let synthVoices = [];
+let selectedVoice = null;
+let audioVisualizerId = null;
+let audioContext = null;
+
+// Initialize Voice Assistant
+function initVoiceAssistant() {
+  // Load SpeechSynthesis Voices
+  if ('speechSynthesis' in window) {
+    loadSynthVoices();
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+      speechSynthesis.onvoiceschanged = loadSynthVoices;
+    }
+  }
+
+  // Setup Web Speech Recognition if available
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SpeechRec) {
+    try {
+      speechRecognitionInstance = new SpeechRec();
+      speechRecognitionInstance.continuous = false;
+      speechRecognitionInstance.interimResults = false;
+      speechRecognitionInstance.lang = 'en-US';
+
+      speechRecognitionInstance.onstart = () => {
+        isListening = true;
+        updateVoiceUIState();
+        setVoiceStatus('🎙️ Listening... Speak your command or say "Hello"');
+      };
+
+      speechRecognitionInstance.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        addTranscriptBubble('user', transcript);
+        handleVoiceCommand(transcript);
+      };
+
+      speechRecognitionInstance.onerror = (event) => {
+        console.log('Voice recognition notice:', event.error);
+        isListening = false;
+        updateVoiceUIState();
+        setVoiceStatus('Ready: Click Mic to speak');
+      };
+
+      speechRecognitionInstance.onend = () => {
+        isListening = false;
+        updateVoiceUIState();
+      };
+    } catch (e) {
+      console.log('Speech recognition initialization notice:', e);
+    }
+  }
+
+  // Initialize Canvas Waveform
+  startVisualizerAnimation();
+}
+
+function loadSynthVoices() {
+  if (!('speechSynthesis' in window)) return;
+  synthVoices = window.speechSynthesis.getVoices();
+  const select = document.getElementById('voice-select');
+  if (!select || synthVoices.length === 0) return;
+
+  select.innerHTML = '';
+  // Prioritize high-quality English voices
+  let bestIdx = 0;
+  synthVoices.forEach((v, idx) => {
+    if (v.lang.startsWith('en')) {
+      const opt = document.createElement('option');
+      opt.value = idx;
+      opt.textContent = `${v.name} (${v.lang})`;
+      select.appendChild(opt);
+
+      // Preferred voice matching
+      const name = v.name.toLowerCase();
+      if (name.includes('natural') || name.includes('google') || name.includes('samantha') || name.includes('zira') || name.includes('jenny')) {
+        bestIdx = idx;
+      }
+    }
+  });
+
+  if (select.children.length === 0) {
+    synthVoices.forEach((v, idx) => {
+      const opt = document.createElement('option');
+      opt.value = idx;
+      opt.textContent = `${v.name} (${v.lang})`;
+      select.appendChild(opt);
+    });
+  }
+
+  if (synthVoices[bestIdx]) {
+    select.value = bestIdx;
+    selectedVoice = synthVoices[bestIdx];
+  }
+}
+
+function updateSelectedVoice() {
+  const select = document.getElementById('voice-select');
+  if (select && synthVoices[select.value]) {
+    selectedVoice = synthVoices[select.value];
+  }
+}
+
+// Open / Close Drawer
+function toggleVoiceAssistant(forceOpen) {
+  const drawer = document.getElementById('voice-drawer');
+  const backdrop = document.getElementById('voice-backdrop');
+  if (!drawer || !backdrop) return;
+
+  if (forceOpen === true) {
+    voiceAssistantOpen = true;
+  } else if (forceOpen === false) {
+    voiceAssistantOpen = false;
+  } else {
+    voiceAssistantOpen = !voiceAssistantOpen;
+  }
+
+  if (voiceAssistantOpen) {
+    drawer.classList.add('active');
+    backdrop.classList.add('active');
+    // If opening for first time with no speech active, give a polite audio greeting
+    if (!isSpeaking) {
+      sayHelloVoice();
+    }
+  } else {
+    drawer.classList.remove('active');
+    backdrop.classList.remove('active');
+  }
+}
+
+// Speak "Hello" Greeting
+function sayHelloVoice() {
+  playChime();
+  const greetingText = "Hello! Welcome to the Student Performance Prediction System. I am Nova, your AI Academic Advisor. I can analyze study habits, attendance, and exam history to predict marks, letter grades, and personalized study recommendations. How can I assist you today?";
+  addTranscriptBubble('ai', "👋 <strong>Hello!</strong> Welcome to the Student Performance Prediction System. I'm <strong>Nova</strong>, your AI Academic Advisor. How can I help you today?");
+  speakText(greetingText);
+}
+
+// Read Prediction Results Aloud
+function speakPredictionResults(openAssistant = false) {
+  if (openAssistant) toggleVoiceAssistant(true);
+
+  if (!lastPredictionResult) {
+    submitPredictionForm();
+  }
+
+  const res = lastPredictionResult;
+  if (!res) {
+    speakText("Calculating student prediction now, please hold on.");
+    return;
+  }
+
+  const score = res.performance_percentage || res.expected_marks || '75';
+  const marks500 = res.expected_marks_500 || Math.round(score * 5);
+  const grade = res.grade || res.predicted_grade || 'B';
+  const gpa = res.gpa !== undefined ? res.gpa.toFixed(1) : '3.0';
+  const category = res.performance_category || 'Good';
+  const passProb = res.pass_probability || '85';
+  const firstTip = res.personalized_recommendations?.[0]?.title || 'Maintain a regular study schedule and steady class attendance.';
+
+  const speech = `Here are the student performance predictions: The expected score is ${score} percent, which corresponds to ${marks500} marks out of 500. Grade is ${grade} with a G P A of ${gpa}, and overall category is ${category}. The pass probability is estimated at ${passProb} percent. Key recommendation: ${firstTip}`;
+
+  addTranscriptBubble('ai', `🎯 <strong>Prediction Summary:</strong> Expected Marks: <strong>${score}%</strong> (${marks500}/500) | Grade: <strong>${grade}</strong> | Category: <strong>${category}</strong> | Pass Probability: <strong>${passProb}%</strong>.`);
+  speakText(speech);
+}
+
+// Speak Recommendations
+function speakRecommendations() {
+  if (!lastPredictionResult) {
+    submitPredictionForm();
+  }
+
+  const res = lastPredictionResult;
+  const recs = res?.personalized_recommendations || [];
+  if (recs.length === 0) {
+    speakText("Maintain active class attendance, complete homework on time, and dedicate regular weekly hours to focused study.");
+    return;
+  }
+
+  let text = "Here are your personalized study recommendations: ";
+  recs.slice(0, 2).forEach((r, idx) => {
+    text += `Tip ${idx + 1}: ${r.title}. ${r.desc} `;
+  });
+
+  addTranscriptBubble('ai', `💡 <strong>Personalized Study Advice:</strong><br>• ${recs[0]?.title || 'Consistent Study'}<br>• ${recs[1]?.title || 'Healthy Sleep Schedule'}`);
+  speakText(text);
+}
+
+// Speak Preset Loaded Confirmation
+function speakPresetLoaded(name) {
+  const speech = `Loaded ${name} student profile. Parameters updated successfully.`;
+  addTranscriptBubble('ai', `⭐ <strong>${name}</strong> preset loaded into input parameters.`);
+  speakText(speech);
+}
+
+// Switch Mode & Tab Utility
+function switchModeAndTab(tabId) {
+  const tabBtn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+  if (tabBtn) tabBtn.click();
+  speakText("Switched to the interactive simulation workspace.");
+}
+
+// Core Speech Synthesis Wrapper
+function speakText(text, onEndCallback) {
+  if (!('speechSynthesis' in window)) {
+    console.log('Web Speech Synthesis not supported in this browser.');
+    return;
+  }
+
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  
+  if (selectedVoice) {
+    utterance.voice = selectedVoice;
+  }
+
+  const rateSlider = document.getElementById('voice-rate');
+  utterance.rate = rateSlider ? parseFloat(rateSlider.value) : 1.0;
+  utterance.pitch = 1.05;
+
+  utterance.onstart = () => {
+    isSpeaking = true;
+    updateVoiceUIState();
+    setVoiceStatus('🔊 Speaking: ' + (text.length > 40 ? text.substring(0, 40) + '...' : text));
+  };
+
+  utterance.onend = () => {
+    isSpeaking = false;
+    updateVoiceUIState();
+    setVoiceStatus('Ready: Click Mic to speak or say "Hello"');
+    if (onEndCallback) onEndCallback();
+  };
+
+  utterance.onerror = (e) => {
+    console.log('Speech error:', e);
+    isSpeaking = false;
+    updateVoiceUIState();
+    setVoiceStatus('Ready');
+  };
+
+  window.speechSynthesis.speak(utterance);
+}
+
+// Stop Audio
+function stopSpeaking() {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+  }
+  isSpeaking = false;
+  isListening = false;
+  if (speechRecognitionInstance) {
+    try { speechRecognitionInstance.stop(); } catch(e) {}
+  }
+  updateVoiceUIState();
+  setVoiceStatus('Audio stopped. Ready for next command.');
+}
+
+// Toggle Voice Recognition (Mic)
+function toggleVoiceRecognition() {
+  if (!speechRecognitionInstance) {
+    alert("Speech recognition is not supported in this browser. You can still use the audio buttons to hear Nova say Hello and read predictions!");
+    return;
+  }
+
+  if (isListening) {
+    speechRecognitionInstance.stop();
+    isListening = false;
+    updateVoiceUIState();
+  } else {
+    try {
+      window.speechSynthesis.cancel();
+      isSpeaking = false;
+      updateVoiceUIState();
+      speechRecognitionInstance.start();
+    } catch(e) {
+      console.log('Error starting speech recognition:', e);
+    }
+  }
+}
+
+// Natural Language Voice Command Parser
+function handleVoiceCommand(rawText) {
+  const text = rawText.toLowerCase().trim();
+
+  if (text.includes('hello') || text.includes('hi') || text.includes('hey') || text.includes('greetings')) {
+    sayHelloVoice();
+  } else if (text.includes('predict') || text.includes('calculate') || text.includes('evaluate') || text.includes('run')) {
+    submitPredictionForm();
+    speakPredictionResults(false);
+  } else if (text.includes('read') || text.includes('speak') || text.includes('score') || text.includes('grade') || text.includes('marks')) {
+    speakPredictionResults(false);
+  } else if (text.includes('tip') || text.includes('recommend') || text.includes('advice') || text.includes('improve')) {
+    speakRecommendations();
+  } else if (text.includes('top') || text.includes('achiever') || text.includes('topper') || text.includes('best')) {
+    loadPreset('top');
+    speakPresetLoaded('Top Achiever');
+  } else if (text.includes('average') || text.includes('middle') || text.includes('normal')) {
+    loadPreset('avg');
+    speakPresetLoaded('Average Student');
+  } else if (text.includes('risk') || text.includes('fail') || text.includes('low')) {
+    loadPreset('risk');
+    speakPresetLoaded('At Risk Student');
+  } else if (text.includes('simulator') || text.includes('what if') || text.includes('scenario')) {
+    switchModeAndTab('tab-simulator');
+  } else if (text.includes('chart') || text.includes('analytics') || text.includes('radar') || text.includes('graph')) {
+    switchModeAndTab('tab-analytics');
+  } else if (text.includes('batch') || text.includes('csv') || text.includes('upload')) {
+    switchModeAndTab('tab-batch');
+  } else if (text.includes('stop') || text.includes('mute') || text.includes('quiet') || text.includes('silence')) {
+    stopSpeaking();
+  } else {
+    speakText(`I heard you say: "${rawText}". You can say Hello, ask me to predict performance, read study tips, or load a student preset.`);
+  }
+}
+
+// UI State Sync
+function updateVoiceUIState() {
+  const headerBtn = document.getElementById('btn-header-voice');
+  const fab = document.getElementById('voice-fab');
+  const avatar = document.getElementById('voice-avatar');
+  const micBtn = document.getElementById('btn-mic-toggle');
+  const stopBtn = document.getElementById('btn-stop-audio');
+  const readBtn = document.getElementById('btn-read-results');
+
+  if (headerBtn) {
+    if (isSpeaking) headerBtn.classList.add('speaking');
+    else headerBtn.classList.remove('speaking');
+  }
+
+  if (fab) {
+    fab.classList.remove('speaking', 'listening');
+    if (isSpeaking) fab.classList.add('speaking');
+    else if (isListening) fab.classList.add('listening');
+  }
+
+  if (avatar) {
+    avatar.classList.remove('speaking', 'listening');
+    if (isSpeaking) avatar.classList.add('speaking');
+    else if (isListening) avatar.classList.add('listening');
+  }
+
+  if (micBtn) {
+    if (isListening) micBtn.classList.add('listening');
+    else micBtn.classList.remove('listening');
+  }
+
+  if (stopBtn) {
+    stopBtn.style.display = isSpeaking ? 'inline-flex' : 'none';
+  }
+
+  if (readBtn) {
+    if (isSpeaking) readBtn.classList.add('active');
+    else readBtn.classList.remove('active');
+  }
+}
+
+function setVoiceStatus(msg) {
+  const label = document.getElementById('voice-status-label');
+  if (label) label.textContent = msg;
+}
+
+function addTranscriptBubble(sender, htmlContent) {
+  const container = document.getElementById('voice-transcript');
+  if (!container) return;
+
+  const bubble = document.createElement('div');
+  bubble.className = `voice-bubble ${sender}`;
+  bubble.innerHTML = `${htmlContent} <span class="voice-bubble-time">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>`;
+  container.appendChild(bubble);
+  container.scrollTop = container.scrollHeight;
+}
+
+// Real-time Canvas Waveform Animation
+function startVisualizerAnimation() {
+  const canvas = document.getElementById('voice-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let step = 0;
+
+  function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const width = canvas.width;
+    const height = canvas.height;
+    const mid = height / 2;
+
+    step += 0.05;
+
+    // Amplitude depends on speaking / listening state
+    let amp = 2;
+    let color = 'rgba(99, 102, 241, 0.4)';
+    
+    if (isSpeaking) {
+      amp = 16 + Math.sin(step * 4) * 6;
+      color = '#06b6d4';
+    } else if (isListening) {
+      amp = 20 + Math.cos(step * 5) * 8;
+      color = '#f43f5e';
+    }
+
+    // Draw Smooth Sine Waves
+    ctx.beginPath();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = color;
+
+    for (let x = 0; x < width; x++) {
+      const y = mid + Math.sin(x * 0.04 + step * 2) * amp * Math.sin((x / width) * Math.PI);
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Second faint harmonic wave
+    ctx.beginPath();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = isSpeaking ? 'rgba(16, 185, 129, 0.5)' : 'rgba(139, 92, 246, 0.3)';
+    for (let x = 0; x < width; x++) {
+      const y = mid + Math.sin(x * 0.06 - step * 1.5) * (amp * 0.6) * Math.sin((x / width) * Math.PI);
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    requestAnimationFrame(render);
+  }
+
+  render();
+}
+
+// Friendly Synthetic Chime Effect via Web Audio API
+function playChime() {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    if (!audioContext) audioContext = new AudioContextClass();
+    if (audioContext.state === 'suspended') {
+      audioContext.resume();
+    }
+
+    const now = audioContext.currentTime;
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(523.25, now); // C5
+    osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.1); // E5
+    osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.2); // G5
+
+    gain.gain.setValueAtTime(0.08, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+    osc.connect(gain);
+    gain.connect(audioContext.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.45);
+  } catch(e) {
+    // Audio Context optional
+  }
 }
 

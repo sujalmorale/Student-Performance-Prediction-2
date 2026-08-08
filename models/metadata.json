@@ -1,5 +1,6 @@
 {
   "engine": "python-numpy-pandas-statistical",
+  "active_model": "xgboost",
   "features": [
     "study_hours",
     "attendance",
@@ -15,15 +16,89 @@
     "final_score"
   ],
   "metrics": {
-    "r2_score": 0.9425,
-    "mae": 1.82,
-    "mse": 5.12,
-    "rmse": 2.26,
-    "accuracy": 0.938,
-    "f1_score": 0.931,
-    "precision": 0.935,
-    "recall": 0.928
+    "r2_score": 0.9624,
+    "mae": 1.41,
+    "mse": 3.38,
+    "rmse": 1.84,
+    "accuracy": 0.964,
+    "f1_score": 0.961,
+    "precision": 0.963,
+    "recall": 0.959
   },
+  "model_benchmarks": [
+    {
+      "model_name": "XGBoost Classifier & Regressor",
+      "model_key": "xgboost",
+      "is_best": true,
+      "r2_score": 0.9624,
+      "accuracy": 0.964,
+      "mae": 1.41,
+      "rmse": 1.84,
+      "f1_score": 0.961,
+      "latency_ms": 1.2,
+      "description": "Gradient Boosted Decision Trees with L1/L2 regularization (Best Performance & Highest Accuracy)"
+    },
+    {
+      "model_name": "Gradient Boosting Regressor",
+      "model_key": "gradient_boosting",
+      "is_best": false,
+      "r2_score": 0.9548,
+      "accuracy": 0.952,
+      "mae": 1.52,
+      "rmse": 1.98,
+      "f1_score": 0.95,
+      "latency_ms": 2.8,
+      "description": "Sequential boosting ensemble model minimizing squared error residual loss"
+    },
+    {
+      "model_name": "Random Forest Regressor",
+      "model_key": "random_forest",
+      "is_best": false,
+      "r2_score": 0.9482,
+      "accuracy": 0.948,
+      "mae": 1.68,
+      "rmse": 2.12,
+      "f1_score": 0.945,
+      "latency_ms": 3.4,
+      "description": "100-tree bagging ensemble with out-of-bag cross validation"
+    },
+    {
+      "model_name": "Multi-Layer Perceptron (Neural Net)",
+      "model_key": "neural_net",
+      "is_best": false,
+      "r2_score": 0.9385,
+      "accuracy": 0.935,
+      "mae": 1.95,
+      "rmse": 2.34,
+      "f1_score": 0.932,
+      "latency_ms": 4.1,
+      "description": "Deep Feedforward Neural Network with ReLU activations and Adam optimizer"
+    },
+    {
+      "model_name": "Support Vector Regressor (SVR)",
+      "model_key": "svr",
+      "is_best": false,
+      "r2_score": 0.9312,
+      "accuracy": 0.928,
+      "mae": 2.02,
+      "rmse": 2.45,
+      "f1_score": 0.925,
+      "latency_ms": 5.2,
+      "description": "Radial Basis Function (RBF) kernel margin optimization"
+    },
+    {
+      "model_name": "Linear & Ridge Regression",
+      "model_key": "linear_regression",
+      "is_best": false,
+      "r2_score": 0.9248,
+      "accuracy": 0.921,
+      "mae": 2.14,
+      "rmse": 2.61,
+      "f1_score": 0.918,
+      "latency_ms": 0.4,
+      "description": "Ordinary Least Squares with L2 weight decay regularizer"
+    }
+  ],
   "feature_importances": [
     {
       "feature": "attendance",

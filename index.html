@@ -38,8 +38,15 @@
 
       </div>
 
-      <!-- Mode Switcher & Links -->
-      <div style="display:flex; align-items:center; gap:1.25rem;">
+      <!-- Mode Switcher, Voice Guide & Links -->
+      <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+        <button type="button" class="btn-voice-header" id="btn-header-voice" onclick="toggleVoiceAssistant(true)" title="AI Voice Assistant: Speak 'Hello'">
+          <div class="voice-wave-mini">
+            <span></span><span></span><span></span><span></span>
+          </div>
+          <span>🎙️ AI Voice Guide (Hello)</span>
+        </button>
+
         <div class="mode-switcher" id="mode-toggle">
           <button type="button" class="mode-btn active" id="btn-mode-student" onclick="switchMode('student')">
             <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
@@ -54,7 +61,6 @@
         <div class="status-badge" id="backend-status">
           <span class="status-dot"></span>
           <span id="status-text">Connected</span>
-
         </div>
       </div>
     </header>
@@ -280,6 +286,25 @@
 
             <div class="confidence-note" id="pred-status-text" style="margin-top:0.75rem;">
               Evaluating multi-factor statistical parameters...
+            </div>
+
+            <!-- Voice Narration Toolbar -->
+            <div class="audio-action-bar">
+              <button type="button" class="btn-audio-pill" id="btn-read-results" onclick="speakPredictionResults()" title="Read prediction results aloud in voice">
+                <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                🔊 Read Aloud
+              </button>
+              <button type="button" class="btn-audio-pill" onclick="speakRecommendations()" title="Speak personalized study recommendations">
+                <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                📚 Speak Tips
+              </button>
+              <button type="button" class="btn-audio-pill" onclick="sayHelloVoice()" title="AI Assistant Hello Greeting">
+                <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
+                👋 Say "Hello"
+              </button>
+              <button type="button" class="btn-audio-pill" id="btn-stop-audio" onclick="stopSpeaking()" style="display:none; color:var(--accent-rose);">
+                ⏹️ Stop Audio
+              </button>
             </div>
           </div>
 
@@ -550,6 +575,108 @@
           </table>
         </div>
 
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Floating Voice Assistant Orb (FAB) -->
+  <div class="voice-fab" id="voice-fab" onclick="toggleVoiceAssistant()" title="Open AI Voice Assistant (Say Hello)">
+    <div class="fab-pulse"></div>
+    <svg width="26" height="26" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+    </svg>
+    <span class="voice-fab-badge">AI Hello</span>
+  </div>
+
+  <!-- Voice Assistant Console Drawer -->
+  <div class="voice-drawer-backdrop" id="voice-backdrop" onclick="toggleVoiceAssistant(false)"></div>
+  <div class="voice-drawer" id="voice-drawer">
+    
+    <!-- Drawer Header -->
+    <div class="voice-drawer-header">
+      <div class="voice-assistant-profile">
+        <div class="voice-avatar" id="voice-avatar">
+          <svg width="22" height="22" fill="#fff" viewBox="0 0 24 24">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/>
+          </svg>
+          <span class="avatar-status-dot"></span>
+        </div>
+        <div>
+          <div class="voice-info-name">
+            Nova AI Voice Guide
+            <span style="font-size:0.75rem; color:var(--accent-emerald);">● Ready</span>
+          </div>
+          <div class="voice-info-role">Interactive Speech & Audio Academic Advisor</div>
+        </div>
+      </div>
+      <button type="button" class="voice-drawer-close" onclick="toggleVoiceAssistant(false)" title="Close Voice Assistant">
+        <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+
+    <!-- Animated Audio Waveform Visualizer Canvas -->
+    <div class="voice-visualizer-box">
+      <canvas id="voice-canvas" width="400" height="50"></canvas>
+      <div class="voice-status-label" id="voice-status-label">Ready: Say "Hello" or click an action below</div>
+    </div>
+
+    <!-- Live Transcript Feed -->
+    <div class="voice-transcript-container" id="voice-transcript">
+      <div class="voice-bubble ai">
+        👋 <strong>Hello!</strong> I am <strong>Nova</strong>, your AI Academic Advisor. Click <em>"Say Hello"</em> to hear my voice greeting, or click <em>"Read Predictions"</em> to narrate your student performance marks and recommendations!
+        <span class="voice-bubble-time">Just now</span>
+      </div>
+    </div>
+
+    <!-- Quick Voice Action Chips -->
+    <div class="voice-actions-bar">
+      <button type="button" class="voice-action-chip" onclick="sayHelloVoice()">
+        👋 Say "Hello"
+      </button>
+      <button type="button" class="voice-action-chip" onclick="speakPredictionResults()">
+        🎯 Read Prediction
+      </button>
+      <button type="button" class="voice-action-chip" onclick="speakRecommendations()">
+        💡 Read Study Tips
+      </button>
+      <button type="button" class="voice-action-chip" onclick="loadPreset('top'); speakPresetLoaded('Top Achiever');">
+        ⭐ Top Achiever
+      </button>
+      <button type="button" class="voice-action-chip" onclick="switchModeAndTab('tab-simulator')">
+        🔄 Open Simulator
+      </button>
+    </div>
+
+    <!-- Controls & Mic Footer -->
+    <div class="voice-drawer-footer">
+      <div class="voice-controls-row">
+        <!-- Voice Selection -->
+        <select class="voice-select" id="voice-select" onchange="updateSelectedVoice()" title="Choose Speech Synthesis Voice">
+          <option value="">Default AI Voice</option>
+        </select>
+
+        <!-- Speed / Rate Slider -->
+        <div class="voice-rate-slider">
+          <span>Speed:</span>
+          <input type="range" id="voice-rate" min="0.75" max="1.5" step="0.05" value="1.0" oninput="document.getElementById('rate-val').textContent = this.value + 'x'">
+          <span id="rate-val" style="min-width:28px;">1.0x</span>
+        </div>
+
+        <!-- Big Mic Button -->
+        <button type="button" class="btn-mic-main" id="btn-mic-toggle" onclick="toggleVoiceRecognition()" title="Click to Speak / Voice Commands">
+          <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24" id="mic-icon">
+            <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+          </svg>
+        </button>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.72rem; color:var(--text-muted);">
+        <span id="mic-hint-text">💡 Tip: Speak "Hello", "Predict", "Top student", "Study tips"</span>
+        <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+          <input type="checkbox" id="auto-speak-toggle" style="accent-color:var(--primary);">
+          Auto-read on predict
+        </label>
       </div>
     </div>
 
