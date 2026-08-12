@@ -171,6 +171,10 @@
         <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
         Batch Predictor & CSV
       </button>
+      <button class="tab-btn" data-tab="tab-history" onclick="loadDatabaseHistory()">
+        <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M13 3a9 9 0 00-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0013 21a9 9 0 000-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+        Database History Logs
+      </button>
       <a href="whatsapp_system/index.html" class="tab-btn" style="text-decoration:none; color:inherit; display:inline-flex; align-items:center; gap:0.4rem;">
         <svg width="18" height="18" fill="#25D366" viewBox="0 0 24 24"><path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.964 9.964 0 001.333 4.993L2 22l5.233-1.37a9.935 9.935 0 004.779 1.218h.004c5.505 0 9.988-4.478 9.989-9.984.001-2.669-1.036-5.176-2.923-7.062A9.924 9.924 0 0012.012 2zm5.856 14.152c-.247.697-1.442 1.332-1.996 1.416-.503.076-1.155.109-1.857-.116-.431-.137-.982-.317-1.696-.628-2.993-1.302-4.945-4.341-5.096-4.542-.15-.201-1.221-1.625-1.221-3.099 0-1.474.772-2.199 1.047-2.496.275-.297.601-.371.802-.371.201 0 .401.002.576.01.188.008.439-.07.687.527.25.599.851 2.078.926 2.229.075.151.125.326.025.526-.1.201-.15.326-.299.501-.15.175-.316.392-.451.526-.15.15-.307.314-.132.614.175.301.777 1.282 1.669 2.076 1.147 1.022 2.115 1.339 2.416 1.49.301.15.476.125.651-.075.175-.201.751-.876.951-1.176.2-.301.401-.251.676-.151.275.1.1.752.876 2.578 1.776.826.9.926 1.051 1.026 1.251.1.201.1 1.152-.147 1.849z"/></svg>
         WhatsApp Link Gateway ➔
@@ -621,6 +625,80 @@
               <tr>
                 <td colspan="10" style="text-align:center; color:var(--text-muted); padding:2rem;">
                   No batch dataset loaded. Click "Download Sample CSV" or upload a file to evaluate predictions.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Tab 5: Database Prediction History Logs -->
+    <div class="tab-content" id="tab-history">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div>
+            <h2>
+              <svg width="22" height="22" fill="var(--primary)" viewBox="0 0 24 24"><path d="M13 3a9 9 0 00-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0013 21a9 9 0 000-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+              SQLite Database Prediction Records & Archives
+            </h2>
+            <p style="font-size:0.82rem; color:var(--text-muted); margin-top:0.25rem;">Persistent records stored in SQLite database with SQLAlchemy ORM</p>
+          </div>
+          <div style="display:flex; gap:0.75rem; align-items:center;">
+            <button class="btn-secondary" onclick="loadDatabaseHistory()" title="Reload from SQLite database">
+              <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+              Refresh DB Records
+            </button>
+          </div>
+        </div>
+
+        <!-- History Stat Summary Cards -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:1rem; margin-bottom:1.5rem;">
+          <div style="background:rgba(15,23,42,0.5); padding:1rem; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+            <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Database Records</div>
+            <div style="font-size:1.5rem; font-weight:800; color:var(--primary); font-family:var(--font-heading);" id="db-stat-count">--</div>
+            <div style="font-size:0.72rem; color:var(--text-dim);">Logged student runs</div>
+          </div>
+          <div style="background:rgba(15,23,42,0.5); padding:1rem; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+            <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Average DB Score</div>
+            <div style="font-size:1.5rem; font-weight:800; color:var(--accent-cyan); font-family:var(--font-heading);" id="db-stat-avg">--</div>
+            <div style="font-size:0.72rem; color:var(--text-dim);">Historical mean marks</div>
+          </div>
+          <div style="background:rgba(15,23,42,0.5); padding:1rem; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+            <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Pass Rate (>=50)</div>
+            <div style="font-size:1.5rem; font-weight:800; color:var(--accent-emerald); font-family:var(--font-heading);" id="db-stat-pass">--</div>
+            <div style="font-size:0.72rem; color:var(--text-dim);">Success percentage</div>
+          </div>
+          <div style="background:rgba(15,23,42,0.5); padding:1rem; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+            <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Database Engine</div>
+            <div style="font-size:1.1rem; font-weight:700; color:var(--text-main); margin-top:0.35rem;">SQLite 3</div>
+            <div style="font-size:0.72rem; color:var(--accent-emerald);">● Online (student_records.db)</div>
+          </div>
+        </div>
+
+        <!-- History Records Table -->
+        <div class="table-responsive">
+          <table class="custom-table" id="history-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Timestamp</th>
+                <th>Student Profile</th>
+                <th>Study Time</th>
+                <th>Attendance</th>
+                <th>Prev Score</th>
+                <th>Expected Marks</th>
+                <th>Grade</th>
+                <th>Category</th>
+                <th>Pass Prob</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="history-table-body">
+              <tr>
+                <td colspan="11" style="text-align:center; color:var(--text-muted); padding:2rem;">
+                  Loading historical predictions from database...
                 </td>
               </tr>
             </tbody>

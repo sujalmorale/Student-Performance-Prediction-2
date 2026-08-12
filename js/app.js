@@ -414,13 +414,26 @@ async function submitPredictionForm() {
   let result = null;
 
   try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (currentAuthToken) {
+      headers['Authorization'] = `Bearer ${currentAuthToken}`;
+    }
+    const payload = {
+      ...formData,
+      student_name: currentUser ? currentUser.name : 'Alex Turner',
+      student_id: currentUser ? currentUser.id : 'STU-2026-081',
+      user_id: currentUser ? currentUser.id : null
+    };
+
     const res = await fetch(`${API_BASE_URL}/api/predict`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData)
+      headers: headers,
+      body: JSON.stringify(payload)
     });
     if (res.ok) {
       result = await res.json();
+      // Silently refresh history table if available
+      loadDatabaseHistory(false);
     }
   } catch (err) {
     console.log('Using client-side evaluation fallback.');
@@ -1946,4 +1959,113 @@ function hideAuthAlert() {
     alert.innerHTML = '';
   }
 }
+
+/* ==========================================================================
+   SQLITE DATABASE HISTORY & PERSISTENCE MODULE
+   ========================================================================== */
+
+async function loadDatabaseHistory(showNotification = true) {
+  const tableBody = document.getElementById('history-table-body');
+  const statCount = document.getElementById('db-stat-count');
+  const statAvg = document.getElementById('db-stat-avg');
+  const statPass = document.getElementById('db-stat-pass');
+
+  if (!tableBody) return;
+
+  try {
+    const [resHistory, resStats] = await Promise.all([
+      fetch(`${API_BASE_URL}/api/history?limit=30`, { signal: AbortSignal.timeout(3000) }),
+      fetch(`${API_BASE_URL}/api/history/stats`, { signal: AbortSignal.timeout(3000) })
+    ]);
+
+    if (resStats.ok) {
+      const stats = await resStats.json();
+      if (statCount) statCount.textContent = stats.total_evaluations || 0;
+      if (statAvg) statAvg.textContent = `${stats.average_score || 0} pts`;
+      if (statPass) statPass.textContent = `${stats.pass_rate || 0}%`;
+    }
+
+    if (resHistory.ok) {
+      const data = await resHistory.json();
+      const records = data.records || [];
+
+      if (records.length === 0) {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="11" style="text-align:center; color:var(--text-muted); padding:2rem;">
+              No historical predictions found in SQLite database. Run a prediction to record evaluations!
+            </td>
+          </tr>`;
+        return;
+      }
+
+      tableBody.innerHTML = records.map((r, index) => {
+        const badgeClass = r.category === 'Excellent' ? 'badge-success' :
+                           (r.category === 'Good' ? 'badge-primary' :
+                           (r.category === 'Average' ? 'badge-warning' : 'badge-danger'));
+
+        return `
+          <tr style="animation:fadeIn 0.2s ease;">
+            <td style="font-weight:700; color:var(--text-dim);">#${r.id}</td>
+            <td style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">${r.created_at || 'Just now'}</td>
+            <td>
+              <strong style="color:var(--text-main); font-size:0.86rem;">${r.student_name || 'Alex Turner'}</strong>
+              <div style="font-size:0.72rem; color:var(--text-dim);">${r.student_id || 'STU-ID'}</div>
+            </td>
+            <td>${r.study_hours}h</td>
+            <td>${r.attendance}%</td>
+            <td>${r.previous_score}</td>
+            <td><strong style="color:var(--primary); font-size:0.95rem;">${r.predicted_score}</strong> / 100</td>
+            <td><span class="custom-badge" style="background:rgba(99,102,241,0.2); color:#a5b4fc; font-weight:700;">${r.grade}</span></td>
+            <td><span class="custom-badge ${badgeClass}">${r.category}</span></td>
+            <td>
+              <span style="font-weight:600; color:${r.pass_probability >= 70 ? 'var(--accent-emerald)' : 'var(--accent-rose)'};">
+                ${r.pass_probability}%
+              </span>
+            </td>
+            <td>
+              <button class="btn-secondary" style="padding:0.25rem 0.6rem; font-size:0.75rem; color:#fca5a5; border-color:rgba(244,63,94,0.3);" onclick="deleteHistoryRecord(${r.id})" title="Delete entry from SQLite database">
+                ✕ Delete
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      if (showNotification) {
+        showAuthToast(`Loaded ${records.length} SQLite database records`, '🗄️');
+      }
+    }
+  } catch (err) {
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="11" style="text-align:center; color:var(--text-muted); padding:2rem;">
+          Database offline or standalone mode. Launch server via <code>python run_server.py</code> to inspect persistent SQLite records.
+        </td>
+      </tr>`;
+  }
+}
+
+async function deleteHistoryRecord(recordId) {
+  if (!confirm(`Are you sure you want to delete database record #${recordId}?`)) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/history/${recordId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (res.ok) {
+      showAuthToast(`Deleted record #${recordId}`, '🗑️');
+      loadDatabaseHistory(false);
+    } else {
+      showAuthToast(`Failed to delete record #${recordId}`, '⚠️');
+    }
+  } catch (err) {
+    showAuthToast('Could not reach backend server to delete record', '⚠️');
+  }
+}
+
 

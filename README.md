@@ -46,12 +46,21 @@ An end-to-end, production-ready web application designed for academic performanc
   - `stress_level`: Self-reported stress scale (1 to 10)
   - `parent_education`, `extracurricular`, `internet_access`
 
-### 2. ⚡ Backend API & Authentication (`app.py`)
-- **Core API Endpoints**:
-  - `POST /api/predict`: Returns predicted score, letter grade, pass/fail status, confidence rating, and tailored improvement advice.
-  - `POST /api/predict-batch`: Evaluates cohort array or parsed CSV files and calculates pass rate statistics.
-  - `GET /api/model-info`: Serves feature importances, dataset baseline statistics, and grade distribution.
-  - `GET /api/health`: Health-check endpoint for server monitoring.
+### 2. ⚡ Flask REST API & SQLite Database Backend (`app.py`, `database.py`)
+- **Framework & Database**: Flask application with CORS enabled, backed by SQLite 3 and SQLAlchemy ORM (`data/student_records.db`).
+- **Database Models**:
+  - `User`: Registered accounts, SHA-256 hashed credentials, roles, and profiles.
+  - `PredictionRecord`: Academic parameter inputs, predicted marks, GPA, category, pass probability, and detailed recommendation JSON.
+  - `CounselingLog`: Tracked parent advisories, email/call/WhatsApp dispatches.
+  - `UserSession`: Secure 7-day bearer token sessions.
+- **REST API Endpoints**:
+  - `POST /api/predict`: Evaluates performance parameters and automatically archives the record in SQLite.
+  - `POST /api/predict-batch`: Cohort CSV evaluation and batch statistics calculation.
+  - `GET /api/history`: Retrieves archived prediction logs (with user/limit filters).
+  - `DELETE /api/history/<id>`: Removes an archived record.
+  - `GET /api/history/stats`: Summarizes total evaluations, average score, and pass rates.
+  - `POST /api/counseling/log` & `GET /api/counseling/logs`: Logs counseling notices.
+  - `GET /api/model-info` & `GET /api/health`: Model metadata and system health monitoring.
 - **Authentication Endpoints**:
   - `POST /api/auth/login`: Authenticates credentials and returns user profile + session bearer token.
   - `POST /api/auth/register`: Creates new user account with assigned role (Student / Teacher / Admin).
@@ -67,6 +76,7 @@ An end-to-end, production-ready web application designed for academic performanc
 ### 4. 🎨 UI/UX Design & Frontend Engineering (`index.html`, `styles.css`, `app.js`)
 - **Glassmorphic Design System**: Modern dark theme with CSS custom property design tokens, Google Fonts (*Outfit* and *Inter*), vibrant accents (`#6366f1`, `#8b5cf6`, `#10b981`), and responsive layouts.
 - **Role-Based Auth Widget & Modal**: Header user profile trigger with dropdown menu, 1-click demo login selector chips, show/hide password toggle, and tabbed sign-in/registration.
+- **Database History Logs Tab**: Interactive archive viewer with real-time refresh, evaluation metrics, and deletion actions.
 - **Interactive Score Gauge**: SVG radial animated gauge displaying target score and letter grade badge.
 - **"What-If" Live Simulator**: Dynamic slider calculations showing instant score delta changes.
 - **Chart.js Analytics**: Visualizations for Feature Importance horizontal bars, Cohort Grade Distribution doughnut, and Correlation scatter plots.
@@ -79,15 +89,19 @@ An end-to-end, production-ready web application designed for academic performanc
 
 ```
 student/
-├── app.py               # REST API Server (Python HTTP)
+├── app.py               # Flask REST API Server & Route Handlers
+├── database.py          # SQLAlchemy ORM Models, SQLite Engine & Seed Setup
 ├── train_model.py       # Performance Analytics Setup Script
 ├── run_server.py        # Application Launcher
-├── requirements.txt     # Python Dependencies
+├── requirements.txt     # Python Dependencies (Flask, SQLAlchemy, Pandas, NumPy)
 ├── index.html           # SPA Dashboard HTML Structure
 ├── css/
 │   └── styles.css       # Production Glassmorphism Design Tokens & CSS
 ├── js/
-│   └── app.js           # Frontend Application Logic, Charts & CSV Parser
+│   └── app.js           # Frontend Application Logic, History Sync & Charts
+├── data/
+│   ├── student_records.db # SQLite Persistent Database
+│   └── users.json       # User Accounts Cache
 └── models/
     └── metadata.json    # Analytics Checkpoints & Pre-calculated Stats
 ```

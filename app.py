@@ -1,130 +1,67 @@
 import os
 import sys
 import json
-import math
-import hashlib
-import secrets
 import time
+import secrets
 import numpy as np
 import pandas as pd
-from http.server import HTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import parse_qs, urlparse
+from datetime import datetime
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 
-# Set working directory to project folder
+# Import database models & session
+from database import init_db, db_session, User, UserSession, PredictionRecord, CounselingLog, hash_password, DATA_DIR
+
+# Initialize Base Directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(BASE_DIR)
 
-# User Database & Session Store Setup
-DATA_DIR = os.path.join(BASE_DIR, 'data')
-os.makedirs(DATA_DIR, exist_ok=True)
-USERS_FILE = os.path.join(DATA_DIR, 'users.json')
+# Initialize Flask Application
+app = Flask(__name__, static_folder='.', static_url_path='')
+CORS(app)
 
-# Active sessions store: token -> { user_id, email, role, expires_at }
-ACTIVE_SESSIONS = {}
+# Ensure Database is initialized
+init_db()
 
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode('utf-8')).hexdigest()
-
-def get_default_users():
-    return [
-        {
-            "id": "STU-2026-081",
-            "name": "Alex Turner",
-            "email": "student@demo.edu",
-            "password_hash": hash_password("student123"),
-            "role": "student",
-            "avatar": "🧑‍🎓",
-            "grade_level": "Undergraduate Year 2",
-            "major": "Computer Science & AI",
-            "created_at": "2026-01-15T09:00:00Z"
-        },
-        {
-            "id": "FAC-9041",
-            "name": "Prof. Eleanor Vance",
-            "email": "teacher@demo.edu",
-            "password_hash": hash_password("teacher123"),
-            "role": "teacher",
-            "avatar": "👨‍🏫",
-            "department": "Academic Counseling & Statistics",
-            "created_at": "2025-08-10T10:30:00Z"
-        },
-        {
-            "id": "ADM-1001",
-            "name": "Dean Arthur Davis",
-            "email": "admin@demo.edu",
-            "password_hash": hash_password("admin123"),
-            "role": "admin",
-            "avatar": "🛡️",
-            "department": "Academic Affairs & Administration",
-            "created_at": "2025-01-01T08:00:00Z"
-        }
-    ]
-
-def load_users():
-    if not os.path.exists(USERS_FILE):
-        default_users = get_default_users()
-        save_users(default_users)
-        return default_users
-    try:
-        with open(USERS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Notice: Error loading users.json ({e}). Rebuilding defaults.")
-        default_users = get_default_users()
-        save_users(default_users)
-        return default_users
-
-def save_users(users_list):
-    try:
-        with open(USERS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(users_list, f, indent=2)
-    except Exception as e:
-        print(f"Notice: Error saving users.json: {e}")
-
-# Initialize users on startup
-load_users()
-
-def sanitize_user(user_dict):
-    """Return user dict without password hash for safe API responses"""
-    safe_user = dict(user_dict)
-    safe_user.pop('password_hash', None)
-    return safe_user
-
-def create_session(user_dict):
-    token = secrets.token_hex(24)
-    ACTIVE_SESSIONS[token] = {
-        "user_id": user_dict["id"],
-        "email": user_dict["email"],
-        "name": user_dict["name"],
-        "role": user_dict["role"],
-        "avatar": user_dict.get("avatar", "👤"),
-        "expires_at": time.time() + (86400 * 7) # 7 days session
-    }
-    return token
-
-def get_session_user(token):
-    if not token or token not in ACTIVE_SESSIONS:
-        return None
-    session_data = ACTIVE_SESSIONS[token]
-    if time.time() > session_data.get("expires_at", 0):
-        del ACTIVE_SESSIONS[token]
-        return None
-    users = load_users()
-    for u in users:
-        if u["id"] == session_data["user_id"]:
-            return sanitize_user(u)
-    return None
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    db_session.remove()
 
 # Load metadata.json if available
 METADATA_PATH = os.path.join(BASE_DIR, 'models', 'metadata.json')
 METADATA = {}
 if os.path.exists(METADATA_PATH):
     try:
-        with open(METADATA_PATH, 'r') as f:
+        with open(METADATA_PATH, 'r', encoding='utf-8') as f:
             METADATA = json.load(f)
     except Exception as e:
         print(f"Notice: Could not read metadata.json: {e}")
 
+# Helper: Get current user from Authorization header
+def get_authenticated_user():
+    auth_header = request.headers.get('Authorization', '')
+    token = None
+    if auth_header.startswith('Bearer '):
+        token = auth_header.split(' ', 1)[1].strip()
+    else:
+        token = request.args.get('token')
+
+    if not token:
+        return None
+
+    session = db_session.query(UserSession).filter_by(token=token).first()
+    if not session:
+        return None
+
+    if time.time() > session.expires_at:
+        db_session.delete(session)
+        db_session.commit()
+        return None
+
+    user = db_session.query(User).filter_by(id=session.user_id).first()
+    return user
+
+# Statistical & Behavioral Prediction Algorithm
 def calculate_student_prediction(data):
     """
     High-precision statistical & behavioral prediction model (NumPy/Pandas accelerated)
@@ -201,7 +138,7 @@ def calculate_student_prediction(data):
         grade = 'F'
         gpa = 0.0
 
-    # 4. Performance Category: Excellent / Good / Average / At Risk
+    # 4. Performance Category
     if final_score >= 85:
         category = 'Excellent'
         badge_color = 'success'
@@ -215,8 +152,7 @@ def calculate_student_prediction(data):
         category = 'At Risk'
         badge_color = 'danger'
 
-    # 5. Pass/Fail Probability (Sigmoid Logistic Curve)
-    # Threshold at score = 50. Steeper transition around 50.
+    # 5. Pass/Fail Probability (Sigmoid Curve)
     k = 0.18
     pass_prob = float(np.clip(round((1.0 / (1.0 + np.exp(-k * (final_score - 50.0)))) * 100.0, 1), 0.5, 99.5))
     fail_prob = float(round(100.0 - pass_prob, 1))
@@ -234,7 +170,6 @@ def calculate_student_prediction(data):
         trend_status = 'Stable →'
         trend_type = 'neutral'
         
-    # Projected Next Term Score
     projected_next_term = float(np.clip(round(final_score + (delta_vs_previous * 0.45) + (2.0 if study_hours > 20 else 0), 1), 0.0, 100.0))
     trajectory = [
         {"period": "Previous Exam", "score": previous_score},
@@ -246,31 +181,26 @@ def calculate_student_prediction(data):
     strong_areas = []
     weak_areas = []
     
-    # Check Attendance
     if attendance >= 85:
         strong_areas.append({"name": "Class Attendance", "detail": f"Excellent presence rate of {attendance}%", "score": 90})
     elif attendance < 75:
         weak_areas.append({"name": "Low Attendance Rate", "detail": f"Attendance is currently at {attendance}% (Threshold: 85%)", "severity": "High", "impact": f"-{round((85 - attendance)*0.3, 1)} pts"})
 
-    # Check Study Hours
     if study_hours >= 20:
         strong_areas.append({"name": "Weekly Study Time", "detail": f"Dedicated effort of {study_hours} hrs/week", "score": 88})
     elif study_hours < 15:
         weak_areas.append({"name": "Weekly Study Deficit", "detail": f"Only {study_hours} hrs/week devoted (Recommended: 20h+)", "severity": "High", "impact": f"-{round((20 - study_hours)*0.75, 1)} pts"})
 
-    # Check Previous Foundation
     if previous_score >= 80:
         strong_areas.append({"name": "Academic Foundation", "detail": f"Strong prior baseline score of {previous_score}", "score": 85})
     elif previous_score < 60:
         weak_areas.append({"name": "Prior Core Gaps", "detail": f"Lower foundation score of {previous_score}", "severity": "Medium", "impact": "-5.0 pts"})
 
-    # Check Assignment Completion
     if assignment_completion >= 85:
         strong_areas.append({"name": "Assignment Consistency", "detail": f"High completion rate of {assignment_completion}%", "score": 87})
     elif assignment_completion < 70:
         weak_areas.append({"name": "Assignment Deadlines", "detail": f"Completion rate is {assignment_completion}%", "severity": "Medium", "impact": f"-{round((85 - assignment_completion)*0.2, 1)} pts"})
 
-    # Check Stress & Sleep
     if stress_level <= 4:
         strong_areas.append({"name": "Stress Control", "detail": f"Low stress index ({stress_level}/10) supports focus", "score": 82})
     elif stress_level > 6:
@@ -281,13 +211,12 @@ def calculate_student_prediction(data):
     else:
         weak_areas.append({"name": "Irregular Sleep Hygiene", "detail": f"Sleeping {sleep_hours} hrs/night (Target: 7.5h)", "severity": "Medium", "impact": "-3.0 pts"})
 
-    # Fallbacks if none detected
     if not strong_areas:
         strong_areas.append({"name": "General Engagement", "detail": "Consistent participation across academic activities", "score": 70})
     if not weak_areas:
         weak_areas.append({"name": "No Major Vulnerabilities", "detail": "All evaluated attributes are well balanced", "severity": "Low", "impact": "0 pts"})
 
-    # 8. Personalized Study Recommendations
+    # 8. Personalized Recommendations
     recommendations = []
     
     if attendance < 85:
@@ -296,7 +225,7 @@ def calculate_student_prediction(data):
             "category": "Attendance",
             "priority": "High Priority",
             "title": "Target 85%+ Classroom Attendance",
-            "description": f"Currently at {attendance}%. Attending all lectures will build exam familiarity.",
+            "description": f"Currently at {attendance}%. Attending all lectures builds core exam familiarity.",
             "impact": f"+{boost} pts"
         })
         
@@ -358,10 +287,8 @@ def calculate_student_prediction(data):
             "impact": "Top Tier"
         })
 
-    # Confidence score calculation
     conf_score = round(float(np.clip(88.5 + (attendance / 100.0) * 8.0 - abs(stress_level - 5) * 0.4, 86.0, 98.8)), 1)
 
-    # Feature contribution breakdown
     feature_contributions = {
         "Attendance": round((attendance / 100.0) * 30, 1),
         "Study Hours": round((study_hours / 40.0) * 26, 1),
@@ -370,7 +297,6 @@ def calculate_student_prediction(data):
         "Wellness & Support": round(max(float(sleep_effect) + tutoring_sessions * 1.1, 0), 1)
     }
 
-    # Attendance & Counselor Actions
     attendance_actions = {
         "requires_call": attendance < 60,
         "requires_email": attendance < 75,
@@ -410,268 +336,314 @@ def calculate_student_prediction(data):
         "input_values": data
     }
 
-class APIRequestHandler(SimpleHTTPRequestHandler):
-    def end_headers(self):
-        # Enable CORS
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        super().end_headers()
 
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.end_headers()
+# ==============================================================================
+# REST API ROUTES
+# ==============================================================================
 
-    def do_GET(self):
-        parsed_path = urlparse(self.path)
-        
-        if parsed_path.path == '/api/model-info':
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps(METADATA).encode('utf-8'))
-            return
-            
-        elif parsed_path.path == '/api/health':
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "healthy", "service": "Student Performance Predictor API (Pandas/NumPy)"}).encode('utf-8'))
-            return
+# 1. System Health
+@app.route('/api/health', methods=['GET'])
+def api_health():
+    return jsonify({
+        "status": "healthy",
+        "service": "Student Performance Prediction System (Flask + SQLite)",
+        "database": "SQLite / SQLAlchemy ORM",
+        "timestamp": datetime.utcnow().isoformat()
+    }), 200
 
-        elif parsed_path.path == '/api/auth/demo-users':
-            users = load_users()
-            sanitized = [sanitize_user(u) for u in users]
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"demo_users": sanitized}).encode('utf-8'))
-            return
+# 2. Model Info & Statistics
+@app.route('/api/model-info', methods=['GET'])
+def api_model_info():
+    return jsonify(METADATA), 200
 
-        elif parsed_path.path == '/api/auth/me':
-            auth_header = self.headers.get('Authorization', '')
-            token = None
-            if auth_header.startswith('Bearer '):
-                token = auth_header.split(' ', 1)[1].strip()
-            else:
-                qs = parse_qs(parsed_path.query)
-                token = qs.get('token', [None])[0]
+# 3. Auth Endpoints
+@app.route('/api/auth/demo-users', methods=['GET'])
+def api_demo_users():
+    users = db_session.query(User).all()
+    return jsonify({"demo_users": [u.to_dict() for u in users]}), 200
 
-            user = get_session_user(token)
-            if user:
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({"authenticated": True, "user": user}).encode('utf-8'))
-            else:
-                self.send_response(401)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({"authenticated": False, "error": "Invalid or expired session token"}).encode('utf-8'))
-            return
-            
-        # Default to static files serving
-        return super().do_GET()
+@app.route('/api/auth/login', methods=['POST'])
+def api_login():
+    data = request.get_json() or {}
+    email = str(data.get('email', '')).strip().lower()
+    password = str(data.get('password', ''))
 
-    def do_POST(self):
-        parsed_path = urlparse(self.path)
-        content_length = int(self.headers.get('Content-Length', 0))
-        post_data_bytes = self.rfile.read(content_length)
-        
-        try:
-            post_data = json.loads(post_data_bytes.decode('utf-8'))
-        except Exception:
-            post_data = {}
+    if not email or not password:
+        return jsonify({"success": False, "error": "Email and password are required."}), 400
 
-        # 1. Login Endpoint
-        if parsed_path.path == '/api/auth/login':
-            email = str(post_data.get('email', '')).strip().lower()
-            password = str(post_data.get('password', ''))
-            
-            if not email or not password:
-                self.send_response(400)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({"success": False, "error": "Email and password are required."}).encode('utf-8'))
-                return
+    pw_hash = hash_password(password)
+    user = db_session.query(User).filter_by(email=email).first()
 
-            pw_hash = hash_password(password)
-            users = load_users()
-            matched_user = None
-            for u in users:
-                if u.get('email', '').lower() == email and u.get('password_hash') == pw_hash:
-                    matched_user = u
-                    break
+    if user and user.password_hash == pw_hash:
+        token = secrets.token_hex(24)
+        session = UserSession(
+            token=token,
+            user_id=user.id,
+            expires_at=time.time() + (86400 * 7) # 7 days
+        )
+        db_session.add(session)
+        db_session.commit()
 
-            if matched_user:
-                token = create_session(matched_user)
-                safe_user = sanitize_user(matched_user)
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({
-                    "success": True,
-                    "token": token,
-                    "user": safe_user,
-                    "message": f"Welcome back, {safe_user['name']}!"
-                }).encode('utf-8'))
-            else:
-                self.send_response(401)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({
-                    "success": False,
-                    "error": "Invalid email or password. Please verify your credentials."
-                }).encode('utf-8'))
-            return
+        return jsonify({
+            "success": True,
+            "token": token,
+            "user": user.to_dict(),
+            "message": f"Welcome back, {user.name}!"
+        }), 200
+    else:
+        return jsonify({
+            "success": False,
+            "error": "Invalid email or password. Please check your credentials or use 1-click demo."
+        }), 401
 
-        # 2. Register Endpoint
-        elif parsed_path.path == '/api/auth/register':
-            name = str(post_data.get('name', '')).strip()
-            email = str(post_data.get('email', '')).strip().lower()
-            password = str(post_data.get('password', ''))
-            role = str(post_data.get('role', 'student')).strip().lower()
-            grade_level = str(post_data.get('grade_level', 'Undergraduate Year 1')).strip()
-            department = str(post_data.get('department', 'Academic Studies')).strip()
+@app.route('/api/auth/register', methods=['POST'])
+def api_register():
+    data = request.get_json() or {}
+    name = str(data.get('name', '')).strip()
+    email = str(data.get('email', '')).strip().lower()
+    password = str(data.get('password', ''))
+    role = str(data.get('role', 'student')).strip().lower()
+    grade_level = str(data.get('grade_level', 'Undergraduate Year 1')).strip()
+    department = str(data.get('department', 'Academic Studies')).strip()
 
-            if not name or not email or not password:
-                self.send_response(400)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({"success": False, "error": "Name, email, and password are required."}).encode('utf-8'))
-                return
+    if not name or not email or not password:
+        return jsonify({"success": False, "error": "Name, email, and password are required."}), 400
 
-            if len(password) < 6:
-                self.send_response(400)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({"success": False, "error": "Password must be at least 6 characters long."}).encode('utf-8'))
-                return
+    if len(password) < 6:
+        return jsonify({"success": False, "error": "Password must be at least 6 characters long."}), 400
 
-            if role not in ['student', 'teacher', 'admin']:
-                role = 'student'
+    if role not in ['student', 'teacher', 'admin']:
+        role = 'student'
 
-            users = load_users()
-            for u in users:
-                if u.get('email', '').lower() == email:
-                    self.send_response(409)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps({"success": False, "error": "An account with this email address already exists."}).encode('utf-8'))
-                    return
+    existing = db_session.query(User).filter_by(email=email).first()
+    if existing:
+        return jsonify({"success": False, "error": "An account with this email already exists."}), 409
 
-            # Create new user record
-            prefix = "STU" if role == "student" else ("FAC" if role == "teacher" else "ADM")
-            new_id = f"{prefix}-{secrets.token_hex(3).upper()}"
-            avatar = "🧑‍🎓" if role == "student" else ("👨‍🏫" if role == "teacher" else "🛡️")
+    prefix = "STU" if role == "student" else ("FAC" if role == "teacher" else "ADM")
+    new_id = f"{prefix}-{secrets.token_hex(3).upper()}"
+    avatar = "🧑‍🎓" if role == "student" else ("👨‍🏫" if role == "teacher" else "🛡️")
 
-            new_user = {
-                "id": new_id,
-                "name": name,
-                "email": email,
-                "password_hash": hash_password(password),
-                "role": role,
-                "avatar": avatar,
-                "grade_level": grade_level if role == "student" else None,
-                "department": department if role != "student" else None,
-                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-            }
+    new_user = User(
+        id=new_id,
+        name=name,
+        email=email,
+        password_hash=hash_password(password),
+        role=role,
+        avatar=avatar,
+        grade_level=grade_level if role == 'student' else None,
+        department=department if role != 'student' else None
+    )
 
-            users.append(new_user)
-            save_users(users)
+    db_session.add(new_user)
+    db_session.commit()
 
-            token = create_session(new_user)
-            safe_user = sanitize_user(new_user)
+    token = secrets.token_hex(24)
+    session = UserSession(
+        token=token,
+        user_id=new_user.id,
+        expires_at=time.time() + (86400 * 7)
+    )
+    db_session.add(session)
+    db_session.commit()
 
-            self.send_response(201)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                "success": True,
-                "token": token,
-                "user": safe_user,
-                "message": f"Account created successfully. Welcome, {name}!"
-            }).encode('utf-8'))
-            return
+    return jsonify({
+        "success": True,
+        "token": token,
+        "user": new_user.to_dict(),
+        "message": f"Account created successfully. Welcome, {name}!"
+    }), 201
 
-        # 3. Logout Endpoint
-        elif parsed_path.path == '/api/auth/logout':
-            auth_header = self.headers.get('Authorization', '')
-            token = None
-            if auth_header.startswith('Bearer '):
-                token = auth_header.split(' ', 1)[1].strip()
-            else:
-                token = post_data.get('token')
+@app.route('/api/auth/me', methods=['GET'])
+def api_me():
+    user = get_authenticated_user()
+    if user:
+        return jsonify({"authenticated": True, "user": user.to_dict()}), 200
+    return jsonify({"authenticated": False, "error": "Invalid or expired session token"}), 401
 
-            if token and token in ACTIVE_SESSIONS:
-                del ACTIVE_SESSIONS[token]
+@app.route('/api/auth/logout', methods=['POST'])
+def api_logout():
+    auth_header = request.headers.get('Authorization', '')
+    token = None
+    if auth_header.startswith('Bearer '):
+        token = auth_header.split(' ', 1)[1].strip()
+    else:
+        data = request.get_json() or {}
+        token = data.get('token')
 
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"success": True, "message": "Logged out successfully"}).encode('utf-8'))
-            return
+    if token:
+        db_session.query(UserSession).filter_by(token=token).delete()
+        db_session.commit()
 
-        # 4. Predict Single
-        elif parsed_path.path == '/api/predict':
-            result = calculate_student_prediction(post_data)
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps(result).encode('utf-8'))
-            return
+    return jsonify({"success": True, "message": "Logged out successfully"}), 200
 
-        # 5. Predict Batch
-        elif parsed_path.path == '/api/predict-batch':
-            students = post_data.get('students', [])
-            batch_results = [calculate_student_prediction(st) for st in students]
-            
-            # Pandas batch statistical metrics
-            if students:
-                res_df = pd.DataFrame(batch_results)
-                scores = res_df['expected_marks'].astype(float)
-                avg_score = round(float(scores.mean()), 1)
-                passed_count = int((scores >= 50).sum())
-                pass_rate = round(float((passed_count / len(students)) * 100), 1)
-            else:
-                avg_score = 0
-                passed_count = 0
-                pass_rate = 0
-            
-            response = {
-                "total_students": len(students),
-                "average_predicted_score": avg_score,
-                "passed_count": passed_count,
-                "failed_count": len(students) - passed_count,
-                "pass_rate": pass_rate,
-                "predictions": batch_results
-            }
-            
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps(response).encode('utf-8'))
-            return
+# 4. Prediction Endpoints & SQLite Archiving
+@app.route('/api/predict', methods=['POST'])
+def api_predict():
+    data = request.get_json() or {}
+    result = calculate_student_prediction(data)
+    
+    # Save prediction record to SQLite Database
+    user = get_authenticated_user()
+    user_id = user.id if user else data.get('user_id')
+    student_name = user.name if user else data.get('student_name', 'Alex Turner')
+    student_id = user.id if user else data.get('student_id', 'STU-PREDICT')
 
-        self.send_response(404)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps({"error": "Endpoint not found"}).encode('utf-8'))
+    try:
+        record = PredictionRecord(
+            user_id=user_id,
+            student_id=student_id,
+            student_name=student_name,
+            study_hours=float(data.get('study_hours', 18)),
+            attendance=float(data.get('attendance', 85)),
+            previous_score=float(data.get('previous_score', 75)),
+            assignment_completion=float(data.get('assignment_completion', 80)),
+            discipline_rating=float(data.get('discipline_rating', 7)),
+            sleep_hours=float(data.get('sleep_hours', 7.5)),
+            tutoring_sessions=float(data.get('tutoring_sessions', 2)),
+            stress_level=float(data.get('stress_level', 4)),
+            parent_education=float(data.get('parent_education', 1)),
+            extracurricular=float(data.get('extracurricular', 1)),
+            predicted_score=result['predicted_score'],
+            expected_marks_500=result['expected_marks_500'],
+            grade=result['grade'],
+            gpa=result['gpa'],
+            category=result['performance_category'],
+            pass_status=result['pass_status'],
+            pass_probability=result['pass_probability'],
+            fail_probability=result['fail_probability'],
+            confidence_score=result['confidence_score'],
+            details_json=json.dumps({
+                "trend": result['performance_trend'],
+                "strong_areas": result['strong_areas'],
+                "weak_areas": result['weak_areas'],
+                "recommendations": result['personalized_recommendations']
+            })
+        )
+        db_session.add(record)
+        db_session.commit()
+        result['record_id'] = record.id
+    except Exception as e:
+        print(f"Notice: Could not save prediction record to database: {e}")
+
+    return jsonify(result), 200
+
+# 5. Batch Prediction
+@app.route('/api/predict-batch', methods=['POST'])
+def api_predict_batch():
+    post_data = request.get_json() or {}
+    students = post_data.get('students', [])
+    batch_results = [calculate_student_prediction(st) for st in students]
+    
+    if students:
+        res_df = pd.DataFrame(batch_results)
+        scores = res_df['expected_marks'].astype(float)
+        avg_score = round(float(scores.mean()), 1)
+        passed_count = int((scores >= 50).sum())
+        pass_rate = round(float((passed_count / len(students)) * 100), 1)
+    else:
+        avg_score = 0
+        passed_count = 0
+        pass_rate = 0
+    
+    return jsonify({
+        "total_students": len(students),
+        "average_predicted_score": avg_score,
+        "passed_count": passed_count,
+        "failed_count": len(students) - passed_count,
+        "pass_rate": pass_rate,
+        "predictions": batch_results
+    }), 200
+
+# 6. Database History Endpoints
+@app.route('/api/history', methods=['GET'])
+def api_get_history():
+    user_id = request.args.get('user_id')
+    limit = int(request.args.get('limit', 20))
+
+    query = db_session.query(PredictionRecord)
+    if user_id:
+        query = query.filter(PredictionRecord.user_id == user_id)
+    
+    records = query.order_by(PredictionRecord.created_at.desc()).limit(limit).all()
+    return jsonify({"count": len(records), "records": [r.to_dict() for r in records]}), 200
+
+@app.route('/api/history/<int:record_id>', methods=['DELETE'])
+def api_delete_history(record_id):
+    record = db_session.query(PredictionRecord).filter_by(id=record_id).first()
+    if not record:
+        return jsonify({"success": False, "error": "Record not found"}), 404
+    
+    db_session.delete(record)
+    db_session.commit()
+    return jsonify({"success": True, "message": f"Record #{record_id} deleted"}), 200
+
+@app.route('/api/history/stats', methods=['GET'])
+def api_history_stats():
+    records = db_session.query(PredictionRecord).all()
+    if not records:
+        return jsonify({"total_evaluations": 0, "average_score": 0, "pass_rate": 0}), 200
+
+    scores = [r.predicted_score for r in records]
+    passed = [r for r in records if r.predicted_score >= 50]
+
+    return jsonify({
+        "total_evaluations": len(records),
+        "average_score": round(float(np.mean(scores)), 1),
+        "pass_rate": round(float((len(passed) / len(records)) * 100), 1),
+        "categories": {
+            "Excellent": len([r for r in records if r.category == 'Excellent']),
+            "Good": len([r for r in records if r.category == 'Good']),
+            "Average": len([r for r in records if r.category == 'Average']),
+            "At Risk": len([r for r in records if r.category == 'At Risk'])
+        }
+    }), 200
+
+# 7. Counseling Logs Endpoints
+@app.route('/api/counseling/log', methods=['POST'])
+def api_log_counseling():
+    data = request.get_json() or {}
+    user = get_authenticated_user()
+    sent_by = user.name if user else data.get('sent_by', 'Academic Counselor')
+
+    log = CounselingLog(
+        student_id=data.get('student_id', 'STU-ADVISORY'),
+        student_name=data.get('student_name', 'Student'),
+        action_type=data.get('action_type', 'WhatsApp'),
+        recipient=data.get('recipient', '+919876543210'),
+        subject=data.get('subject', 'Performance Notice'),
+        message_content=data.get('message_content', ''),
+        status=data.get('status', 'Dispatched'),
+        sent_by=sent_by
+    )
+
+    db_session.add(log)
+    db_session.commit()
+
+    return jsonify({"success": True, "log": log.to_dict()}), 201
+
+@app.route('/api/counseling/logs', methods=['GET'])
+def api_get_counseling_logs():
+    logs = db_session.query(CounselingLog).order_by(CounselingLog.timestamp.desc()).limit(30).all()
+    return jsonify({"count": len(logs), "logs": [l.to_dict() for l in logs]}), 200
+
+# 8. Static Web Serving Routes
+@app.route('/', methods=['GET'])
+def serve_index():
+    return send_from_directory(BASE_DIR, 'index.html')
+
+@app.route('/whatsapp_system/', methods=['GET'])
+@app.route('/whatsapp_system/index.html', methods=['GET'])
+def serve_whatsapp():
+    return send_from_directory(os.path.join(BASE_DIR, 'whatsapp_system'), 'index.html')
 
 def run_server(port=5000):
-    server_address = ('', port)
-    httpd = HTTPServer(server_address, APIRequestHandler)
-    print(f"============================================================")
-    print(f" Student Performance Prediction System Server Running")
-    print(f" URL: http://localhost:{port}")
-    print(f" API Endpoint: http://localhost:{port}/api/predict")
-    print(f" Model Analytics: http://localhost:{port}/api/model-info")
-    print(f"============================================================")
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\nShutting down server...")
-        httpd.server_close()
+    print("============================================================")
+    print(" Student Performance Prediction Flask & SQLite Server Running")
+    print(f" Web UI: http://localhost:{port}")
+    print(f" API Health: http://localhost:{port}/api/health")
+    print(f" Database: SQLite ({os.path.join(DATA_DIR, 'student_records.db')})")
+    print("============================================================")
+    app.run(host='0.0.0.0', port=port, debug=False)
 
 if __name__ == '__main__':
     port = 5000
