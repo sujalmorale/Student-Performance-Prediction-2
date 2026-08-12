@@ -1615,6 +1615,11 @@ function openAuthModal(tab = 'login') {
   const menu = document.getElementById('user-dropdown-menu');
   if (menu) menu.classList.remove('show');
 
+  const emailField = document.getElementById('login-email');
+  const pwdField = document.getElementById('login-password');
+  if (emailField && !emailField.value) emailField.value = 'student@demo.edu';
+  if (pwdField && !pwdField.value) pwdField.value = 'student123';
+
   switchAuthTab(tab);
   hideAuthAlert();
 
