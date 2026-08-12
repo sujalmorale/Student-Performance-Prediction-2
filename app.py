@@ -15,13 +15,12 @@ from database import init_db, db_session, User, UserSession, PredictionRecord, C
 
 # Initialize Base Directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-os.chdir(BASE_DIR)
 
-# Initialize Flask Application
+# Initialize Flask Application with explicit paths for Vercel/Local
 app = Flask(
     __name__,
-    template_folder='templates',
-    static_folder='static',
+    template_folder=os.path.join(BASE_DIR, 'templates'),
+    static_folder=os.path.join(BASE_DIR, 'static'),
     static_url_path='/static'
 )
 
@@ -33,8 +32,15 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 
 CORS(app)
 
-# Ensure Database is initialized
-init_db()
+# Ensure Database is initialized safely
+try:
+    init_db()
+except Exception as e:
+    print(f"Notice during init_db: {e}")
+
+@app.route('/favicon.ico')
+def favicon():
+    return ('', 204)
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):

@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import json
 from datetime import datetime
@@ -8,8 +9,21 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, scoped_session, relationship
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, 'data')
-os.makedirs(DATA_DIR, exist_ok=True)
+
+# Vercel / AWS Lambda read-only filesystem handling
+# In serverless environments, only /tmp is writable
+is_serverless = bool(os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME'))
+
+if is_serverless:
+    DATA_DIR = '/tmp/student_data'
+else:
+    DATA_DIR = os.path.join(BASE_DIR, 'data')
+
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+except (OSError, PermissionError):
+    DATA_DIR = '/tmp/student_data'
+    os.makedirs(DATA_DIR, exist_ok=True)
 
 DB_PATH = os.path.join(DATA_DIR, 'student_records.db')
 DATABASE_URL = f"sqlite:///{DB_PATH}"
@@ -28,7 +42,7 @@ class User(Base):
     email = Column(String(120), unique=True, nullable=False, index=True)
     password_hash = Column(String(256), nullable=False)
     role = Column(String(20), default='student', index=True) # 'student', 'teacher', 'admin'
-    avatar = Column(String(20), default='🧑‍🎓')
+    avatar = Column(String(20), default='👤')
     grade_level = Column(String(50), nullable=True)
     major = Column(String(100), nullable=True)
     department = Column(String(100), nullable=True)
@@ -169,116 +183,119 @@ class CounselingLog(Base):
 
 def init_db():
     """Create tables and ensure demo accounts with Werkzeug password hashing"""
-    Base.metadata.create_all(bind=engine)
-    session = db_session()
+    try:
+        Base.metadata.create_all(bind=engine)
+        session = db_session()
 
-    demo_accounts = [
-        {
-            "id": "STU-2026-081",
-            "name": "Student User",
-            "email": "student@demo.edu",
-            "password": "student123",
-            "role": "student",
-            "avatar": "👤",
-            "grade_level": "Undergraduate Year 2",
-            "major": "Computer Science & AI"
-        },
-        {
-            "id": "FAC-9041",
-            "name": "Prof. Eleanor Vance",
-            "email": "teacher@demo.edu",
-            "password": "teacher123",
-            "role": "teacher",
-            "avatar": "👨‍🏫",
-            "department": "Academic Counseling & Statistics"
-        },
-        {
-            "id": "ADM-1001",
-            "name": "Dean Arthur Davis",
-            "email": "admin@demo.edu",
-            "password": "admin123",
-            "role": "admin",
-            "avatar": "🛡️",
-            "department": "Academic Affairs & Administration"
-        }
-    ]
-
-    for acc in demo_accounts:
-        user = session.query(User).filter_by(email=acc["email"]).first()
-        if not user:
-            new_user = User(
-                id=acc["id"],
-                name=acc["name"],
-                email=acc["email"],
-                role=acc["role"],
-                avatar=acc["avatar"],
-                grade_level=acc.get("grade_level"),
-                major=acc.get("major"),
-                department=acc.get("department")
-            )
-            new_user.set_password(acc["password"])
-            session.add(new_user)
-        else:
-            user.name = acc["name"]
-            user.avatar = acc["avatar"]
-            user.set_password(acc["password"])
-
-    session.commit()
-
-    # Seed sample prediction records if empty
-    if session.query(PredictionRecord).count() == 0:
-        sample_records = [
-            PredictionRecord(
-                user_id="STU-2026-081",
-                student_id="STU-2026-081",
-                student_name="Student",
-                study_hours=24.0,
-                attendance=92.0,
-                previous_score=84.0,
-                assignment_completion=90.0,
-                discipline_rating=8.0,
-                sleep_hours=7.5,
-                tutoring_sessions=2.0,
-                stress_level=3.0,
-                predicted_score=87.5,
-                expected_marks_500=437.5,
-                grade="A",
-                gpa=3.7,
-                category="Excellent",
-                pass_status="PASS",
-                pass_probability=98.2,
-                fail_probability=1.8,
-                confidence_score=95.4,
-                details_json=json.dumps({"trend": "Improving", "weak_areas": [], "strong_areas": [{"name": "Attendance", "score": 92}]})
-            ),
-            PredictionRecord(
-                user_id="STU-2026-081",
-                student_id="STU-2026-081",
-                student_name="Student",
-                study_hours=18.0,
-                attendance=85.0,
-                previous_score=75.0,
-                assignment_completion=82.0,
-                discipline_rating=7.0,
-                sleep_hours=7.0,
-                tutoring_sessions=1.0,
-                stress_level=5.0,
-                predicted_score=76.8,
-                expected_marks_500=384.0,
-                grade="B",
-                gpa=3.0,
-                category="Good",
-                pass_status="PASS",
-                pass_probability=94.5,
-                fail_probability=5.5,
-                confidence_score=91.0,
-                details_json=json.dumps({"trend": "Stable", "weak_areas": [], "strong_areas": [{"name": "Coursework", "score": 82}]})
-            )
+        demo_accounts = [
+            {
+                "id": "STU-2026-081",
+                "name": "Student User",
+                "email": "student@demo.edu",
+                "password": "student123",
+                "role": "student",
+                "avatar": "👤",
+                "grade_level": "Undergraduate Year 2",
+                "major": "Computer Science & AI"
+            },
+            {
+                "id": "FAC-9041",
+                "name": "Prof. Eleanor Vance",
+                "email": "teacher@demo.edu",
+                "password": "teacher123",
+                "role": "teacher",
+                "avatar": "👨‍🏫",
+                "department": "Academic Counseling & Statistics"
+            },
+            {
+                "id": "ADM-1001",
+                "name": "Dean Arthur Davis",
+                "email": "admin@demo.edu",
+                "password": "admin123",
+                "role": "admin",
+                "avatar": "🛡️",
+                "department": "Academic Affairs & Administration"
+            }
         ]
-        session.add_all(sample_records)
+
+        for acc in demo_accounts:
+            user = session.query(User).filter_by(email=acc["email"]).first()
+            if not user:
+                new_user = User(
+                    id=acc["id"],
+                    name=acc["name"],
+                    email=acc["email"],
+                    role=acc["role"],
+                    avatar=acc["avatar"],
+                    grade_level=acc.get("grade_level"),
+                    major=acc.get("major"),
+                    department=acc.get("department")
+                )
+                new_user.set_password(acc["password"])
+                session.add(new_user)
+            else:
+                user.name = acc["name"]
+                user.avatar = acc["avatar"]
+                user.set_password(acc["password"])
+
         session.commit()
 
-    session.close()
+        # Seed sample prediction records if empty
+        if session.query(PredictionRecord).count() == 0:
+            sample_records = [
+                PredictionRecord(
+                    user_id="STU-2026-081",
+                    student_id="STU-2026-081",
+                    student_name="Student",
+                    study_hours=24.0,
+                    attendance=92.0,
+                    previous_score=84.0,
+                    assignment_completion=90.0,
+                    discipline_rating=8.0,
+                    sleep_hours=7.5,
+                    tutoring_sessions=2.0,
+                    stress_level=3.0,
+                    predicted_score=87.5,
+                    expected_marks_500=437.5,
+                    grade="A",
+                    gpa=3.7,
+                    category="Excellent",
+                    pass_status="PASS",
+                    pass_probability=98.2,
+                    fail_probability=1.8,
+                    confidence_score=95.4,
+                    details_json=json.dumps({"trend": "Improving", "weak_areas": [], "strong_areas": [{"name": "Attendance", "score": 92}]})
+                ),
+                PredictionRecord(
+                    user_id="STU-2026-081",
+                    student_id="STU-2026-081",
+                    student_name="Student",
+                    study_hours=18.0,
+                    attendance=85.0,
+                    previous_score=75.0,
+                    assignment_completion=82.0,
+                    discipline_rating=7.0,
+                    sleep_hours=7.0,
+                    tutoring_sessions=1.0,
+                    stress_level=5.0,
+                    predicted_score=76.8,
+                    expected_marks_500=384.0,
+                    grade="B",
+                    gpa=3.0,
+                    category="Good",
+                    pass_status="PASS",
+                    pass_probability=94.5,
+                    fail_probability=5.5,
+                    confidence_score=91.0,
+                    details_json=json.dumps({"trend": "Stable", "weak_areas": [], "strong_areas": [{"name": "Coursework", "score": 82}]})
+                )
+            ]
+            session.add_all(sample_records)
+            session.commit()
+
+        session.close()
+    except Exception as e:
+        print(f"Notice during database initialization: {e}")
 
 if __name__ == '__main__':
     init_db()
