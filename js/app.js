@@ -18,6 +18,7 @@ const API_BASE_URL = 'http://localhost:5000';
 // Initialize App on DOM Load
 document.addEventListener('DOMContentLoaded', () => {
   initTabs();
+  initAuthSystem();
   checkBackendConnection();
   loadInitialPrediction();
   runLiveSimulation();
@@ -1425,6 +1426,524 @@ function playChime() {
     osc.stop(now + 0.45);
   } catch(e) {
     // Audio Context optional
+  }
+}
+
+/* ==========================================================================
+   AUTHENTICATION & USER PROFILE MANAGEMENT MODULE
+   ========================================================================== */
+
+let currentUser = null;
+let currentAuthToken = null;
+
+const DEMO_PRESET_USERS = {
+  student: {
+    id: "STU-2026-081",
+    name: "Alex Turner",
+    email: "student@demo.edu",
+    role: "student",
+    avatar: "🧑‍🎓",
+    grade_level: "Undergraduate Year 2",
+    major: "Computer Science & AI"
+  },
+  teacher: {
+    id: "FAC-9041",
+    name: "Prof. Eleanor Vance",
+    email: "teacher@demo.edu",
+    role: "teacher",
+    avatar: "👨‍🏫",
+    department: "Academic Counseling & Statistics"
+  },
+  admin: {
+    id: "ADM-1001",
+    name: "Dean Arthur Davis",
+    email: "admin@demo.edu",
+    role: "admin",
+    avatar: "🛡️",
+    department: "Academic Affairs & Administration"
+  }
+};
+
+// Initialize Auth on Startup
+async function initAuthSystem() {
+  // Close dropdown on outside click
+  document.addEventListener('click', (e) => {
+    const trigger = document.getElementById('user-profile-trigger');
+    const menu = document.getElementById('user-dropdown-menu');
+    if (menu && menu.classList.contains('show')) {
+      if (!menu.contains(e.target) && !trigger.contains(e.target)) {
+        menu.classList.remove('show');
+        if (trigger) trigger.classList.remove('active');
+      }
+    }
+  });
+
+  // Check saved session in localStorage
+  const savedToken = localStorage.getItem('student_auth_token');
+  const savedUserJson = localStorage.getItem('student_auth_user');
+
+  if (savedToken && savedUserJson) {
+    try {
+      currentUser = JSON.parse(savedUserJson);
+      currentAuthToken = savedToken;
+      updateAuthUI(currentUser);
+
+      // Verify token with backend asynchronously
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
+          headers: { 'Authorization': `Bearer ${savedToken}` },
+          signal: AbortSignal.timeout(2000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user) {
+            currentUser = data.user;
+            localStorage.setItem('student_auth_user', JSON.stringify(currentUser));
+            updateAuthUI(currentUser);
+          }
+        }
+      } catch (err) {
+        // Standalone or offline fallback is active
+      }
+      return;
+    } catch (e) {
+      console.warn('Error parsing saved auth session:', e);
+    }
+  }
+
+  // If no saved user, default to Demo Student for immediate convenience or show login button
+  // Let's set Alex Turner as initial session so user has an active logged-in profile by default!
+  currentUser = DEMO_PRESET_USERS.student;
+  currentAuthToken = 'demo_token_student_auto';
+  localStorage.setItem('student_auth_token', currentAuthToken);
+  localStorage.setItem('student_auth_user', JSON.stringify(currentUser));
+  updateAuthUI(currentUser);
+}
+
+// Update UI Header and Dashboard based on active user
+function updateAuthUI(user) {
+  const btnLogin = document.getElementById('btn-header-login');
+  const userTrigger = document.getElementById('user-profile-trigger');
+  const userNameDisplay = document.getElementById('user-name-display');
+  const userAvatarBadge = document.getElementById('user-avatar-badge');
+  const userRoleTag = document.getElementById('user-role-tag');
+
+  // Dropdown items
+  const dropdownAvatar = document.getElementById('dropdown-user-avatar');
+  const dropdownName = document.getElementById('dropdown-user-name');
+  const dropdownEmail = document.getElementById('dropdown-user-email');
+  const dropdownId = document.getElementById('dropdown-user-id');
+  const dropdownRoleText = document.getElementById('dropdown-user-role-text');
+  const dropdownDetailLabel = document.getElementById('dropdown-info-detail-label');
+  const dropdownDetailVal = document.getElementById('dropdown-info-detail-val');
+
+  if (user) {
+    if (btnLogin) btnLogin.style.display = 'none';
+    if (userTrigger) userTrigger.style.display = 'inline-flex';
+
+    if (userNameDisplay) userNameDisplay.textContent = user.name || 'User';
+    if (userAvatarBadge) userAvatarBadge.textContent = user.avatar || '👤';
+
+    // Role Tag Styling
+    if (userRoleTag) {
+      userRoleTag.className = `user-role-tag role-${user.role || 'student'}`;
+      userRoleTag.textContent = (user.role === 'teacher' ? 'Teacher' : (user.role === 'admin' ? 'Admin' : 'Student'));
+    }
+
+    // Dropdown Details
+    if (dropdownAvatar) dropdownAvatar.textContent = user.avatar || '👤';
+    if (dropdownName) dropdownName.textContent = user.name || 'User';
+    if (dropdownEmail) dropdownEmail.textContent = user.email || '';
+    if (dropdownId) dropdownId.textContent = user.id || 'ACC-001';
+    if (dropdownRoleText) dropdownRoleText.textContent = (user.role === 'teacher' ? 'Faculty / Counselor' : (user.role === 'admin' ? 'System Administrator' : 'Undergraduate Student'));
+
+    if (dropdownDetailLabel && dropdownDetailVal) {
+      if (user.role === 'student') {
+        dropdownDetailLabel.textContent = 'Academic Level';
+        dropdownDetailVal.textContent = user.grade_level || user.major || 'Undergraduate Y2';
+      } else {
+        dropdownDetailLabel.textContent = 'Department';
+        dropdownDetailVal.textContent = user.department || 'Academic Counseling';
+      }
+    }
+
+    // Auto-sync dashboard mode based on user role
+    if (user.role === 'teacher' || user.role === 'admin') {
+      switchMode('teacher');
+    } else {
+      switchMode('student');
+    }
+
+  } else {
+    if (btnLogin) btnLogin.style.display = 'inline-flex';
+    if (userTrigger) userTrigger.style.display = 'none';
+    const menu = document.getElementById('user-dropdown-menu');
+    if (menu) menu.classList.remove('show');
+  }
+}
+
+// Toggle Dropdown Menu
+function toggleUserDropdown(e) {
+  if (e) e.stopPropagation();
+  const menu = document.getElementById('user-dropdown-menu');
+  const trigger = document.getElementById('user-profile-trigger');
+  if (menu) {
+    const isShowing = menu.classList.toggle('show');
+    if (trigger) {
+      if (isShowing) trigger.classList.add('active');
+      else trigger.classList.remove('active');
+    }
+  }
+}
+
+// Open / Close Auth Modal
+function openAuthModal(tab = 'login') {
+  const backdrop = document.getElementById('auth-modal-backdrop');
+  const menu = document.getElementById('user-dropdown-menu');
+  if (menu) menu.classList.remove('show');
+
+  switchAuthTab(tab);
+  hideAuthAlert();
+
+  if (backdrop) {
+    backdrop.classList.add('show');
+  }
+}
+
+function closeAuthModal() {
+  const backdrop = document.getElementById('auth-modal-backdrop');
+  if (backdrop) {
+    backdrop.classList.remove('show');
+  }
+  hideAuthAlert();
+}
+
+function handleAuthModalBackdropClick(e) {
+  if (e.target.id === 'auth-modal-backdrop') {
+    closeAuthModal();
+  }
+}
+
+// Switch between Login and Register tabs
+function switchAuthTab(tab) {
+  const btnLogin = document.getElementById('auth-tab-btn-login');
+  const btnReg = document.getElementById('auth-tab-btn-register');
+  const formLogin = document.getElementById('form-auth-login');
+  const formReg = document.getElementById('form-auth-register');
+  const title = document.getElementById('auth-modal-title');
+  const sub = document.getElementById('auth-modal-subtitle');
+
+  hideAuthAlert();
+
+  if (tab === 'login') {
+    if (btnLogin) btnLogin.classList.add('active');
+    if (btnReg) btnReg.classList.remove('active');
+    if (formLogin) formLogin.style.display = 'block';
+    if (formReg) formReg.style.display = 'none';
+    if (title) title.textContent = 'Academic Portal Sign In';
+    if (sub) sub.textContent = 'Access your personalized performance dashboard or quick-login via demo roles';
+  } else {
+    if (btnReg) btnReg.classList.add('active');
+    if (btnLogin) btnLogin.classList.remove('active');
+    if (formReg) formReg.style.display = 'block';
+    if (formLogin) formLogin.style.display = 'none';
+    if (title) title.textContent = 'Create Academic Account';
+    if (sub) sub.textContent = 'Join the student performance tracking and early intervention network';
+  }
+}
+
+// Quick Demo Login Action
+async function quickDemoLogin(role) {
+  const demoAccount = DEMO_PRESET_USERS[role];
+  if (!demoAccount) return;
+
+  const emailField = document.getElementById('login-email');
+  const pwdField = document.getElementById('login-password');
+
+  if (emailField) emailField.value = demoAccount.email;
+  if (pwdField) pwdField.value = `${role}123`;
+
+  // Highlight selected demo chip
+  const chips = document.querySelectorAll('.demo-role-chip');
+  chips.forEach(c => c.classList.remove('active'));
+  if (event && event.currentTarget) {
+    event.currentTarget.classList.add('active');
+  }
+
+  showAuthAlert(`Signing in as ${demoAccount.name} (${demoAccount.role.toUpperCase()})...`, 'success');
+
+  // Submit via API or instant client fallback
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: demoAccount.email, password: `${role}123` }),
+      signal: AbortSignal.timeout(2000)
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      currentUser = data.user || demoAccount;
+      currentAuthToken = data.token || `token_${role}_demo`;
+    } else {
+      currentUser = demoAccount;
+      currentAuthToken = `token_${role}_demo`;
+    }
+  } catch (err) {
+    currentUser = demoAccount;
+    currentAuthToken = `token_${role}_demo`;
+  }
+
+  // Save session
+  localStorage.setItem('student_auth_token', currentAuthToken);
+  localStorage.setItem('student_auth_user', JSON.stringify(currentUser));
+  updateAuthUI(currentUser);
+
+  playChime();
+  showAuthToast(`Welcome back, ${currentUser.name}! (${currentUser.role.toUpperCase()})`, currentUser.avatar);
+
+  setTimeout(() => {
+    closeAuthModal();
+  }, 400);
+}
+
+// Handle Form Submissions
+async function handleLoginSubmit(e) {
+  e.preventDefault();
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const btnSubmit = document.getElementById('btn-login-submit');
+
+  if (!email || !password) {
+    showAuthAlert('Please enter both your email address and password.', 'error');
+    return;
+  }
+
+  if (btnSubmit) {
+    btnSubmit.disabled = true;
+    btnSubmit.innerHTML = '<span>Verifying credentials...</span>';
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+      signal: AbortSignal.timeout(3000)
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      currentUser = data.user;
+      currentAuthToken = data.token;
+      localStorage.setItem('student_auth_token', currentAuthToken);
+      localStorage.setItem('student_auth_user', JSON.stringify(currentUser));
+      updateAuthUI(currentUser);
+
+      playChime();
+      showAuthToast(data.message || `Signed in as ${currentUser.name}`, currentUser.avatar);
+      closeAuthModal();
+    } else {
+      showAuthAlert(data.error || 'Invalid credentials. Check email and password or use 1-click demo.', 'error');
+    }
+  } catch (err) {
+    // Client fallback for preset demo users
+    const matched = Object.values(DEMO_PRESET_USERS).find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (matched) {
+      currentUser = matched;
+      currentAuthToken = `token_${matched.role}_offline`;
+      localStorage.setItem('student_auth_token', currentAuthToken);
+      localStorage.setItem('student_auth_user', JSON.stringify(currentUser));
+      updateAuthUI(currentUser);
+
+      playChime();
+      showAuthToast(`Signed in as ${currentUser.name}!`, currentUser.avatar);
+      closeAuthModal();
+    } else {
+      showAuthAlert('Unable to reach server. Please use one of the 1-Click Instant Demo logins.', 'error');
+    }
+  } finally {
+    if (btnSubmit) {
+      btnSubmit.disabled = false;
+      btnSubmit.innerHTML = '<svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v10z"/></svg><span>Sign In to Dashboard</span>';
+    }
+  }
+}
+
+async function handleRegisterSubmit(e) {
+  e.preventDefault();
+  const name = document.getElementById('reg-name').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const role = document.getElementById('reg-role').value;
+  const gradeLevel = document.getElementById('reg-grade') ? document.getElementById('reg-grade').value.trim() : '';
+  const department = document.getElementById('reg-department') ? document.getElementById('reg-department').value.trim() : '';
+  const password = document.getElementById('reg-password').value;
+  const btnSubmit = document.getElementById('btn-register-submit');
+
+  if (!name || !email || !password) {
+    showAuthAlert('Please fill in all required registration fields.', 'error');
+    return;
+  }
+
+  if (password.length < 6) {
+    showAuthAlert('Password must be at least 6 characters long.', 'error');
+    return;
+  }
+
+  if (btnSubmit) {
+    btnSubmit.disabled = true;
+    btnSubmit.innerHTML = '<span>Creating your account...</span>';
+  }
+
+  const payload = {
+    name,
+    email,
+    password,
+    role,
+    grade_level: gradeLevel || 'Undergraduate Year 1',
+    department: department || 'General Academic'
+  };
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(3000)
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      currentUser = data.user;
+      currentAuthToken = data.token;
+      localStorage.setItem('student_auth_token', currentAuthToken);
+      localStorage.setItem('student_auth_user', JSON.stringify(currentUser));
+      updateAuthUI(currentUser);
+
+      playChime();
+      showAuthToast(`Welcome to the portal, ${currentUser.name}!`, currentUser.avatar);
+      closeAuthModal();
+    } else {
+      showAuthAlert(data.error || 'Registration failed. Email may already be in use.', 'error');
+    }
+  } catch (err) {
+    // Client fallback registration
+    const fallbackUser = {
+      id: `${role === 'student' ? 'STU' : 'FAC'}-${Math.floor(1000 + Math.random() * 9000)}`,
+      name,
+      email,
+      role,
+      avatar: role === 'student' ? '🧑‍🎓' : (role === 'teacher' ? '👨‍🏫' : '🛡️'),
+      grade_level: gradeLevel,
+      department: department
+    };
+    currentUser = fallbackUser;
+    currentAuthToken = `token_reg_${Date.now()}`;
+    localStorage.setItem('student_auth_token', currentAuthToken);
+    localStorage.setItem('student_auth_user', JSON.stringify(currentUser));
+    updateAuthUI(currentUser);
+
+    playChime();
+    showAuthToast(`Account registered for ${currentUser.name}!`, currentUser.avatar);
+    closeAuthModal();
+  } finally {
+    if (btnSubmit) {
+      btnSubmit.disabled = false;
+      btnSubmit.innerHTML = '<svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg><span>Create Account & Log In</span>';
+    }
+  }
+}
+
+// Role Field Dynamic Switch in Registration
+function handleRoleFieldChange(role) {
+  const groupStudent = document.getElementById('reg-group-student');
+  const groupTeacher = document.getElementById('reg-group-teacher');
+
+  if (role === 'student') {
+    if (groupStudent) groupStudent.style.display = 'block';
+    if (groupTeacher) groupTeacher.style.display = 'none';
+  } else {
+    if (groupStudent) groupStudent.style.display = 'none';
+    if (groupTeacher) groupTeacher.style.display = 'block';
+  }
+}
+
+// Toggle Show/Hide Password
+function togglePasswordVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.innerHTML = `<svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>`;
+  } else {
+    input.type = 'password';
+    btn.innerHTML = `<svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>`;
+  }
+}
+
+// Log Out Action
+async function logoutUser() {
+  const token = currentAuthToken;
+  try {
+    if (token) {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ token }),
+        signal: AbortSignal.timeout(1500)
+      });
+    }
+  } catch (err) {
+    // Ignore offline errors
+  }
+
+  const prevName = currentUser ? currentUser.name : 'User';
+  currentUser = null;
+  currentAuthToken = null;
+  localStorage.removeItem('student_auth_token');
+  localStorage.removeItem('student_auth_user');
+
+  updateAuthUI(null);
+  showAuthToast(`Signed out of session (${prevName})`, '👋');
+}
+
+// Toast Banner helper
+let toastTimer = null;
+function showAuthToast(message, icon = '✨') {
+  const toast = document.getElementById('auth-toast');
+  const toastMsg = document.getElementById('auth-toast-msg');
+  const toastIcon = document.getElementById('auth-toast-icon');
+
+  if (!toast || !toastMsg) return;
+
+  if (toastIcon) toastIcon.textContent = icon;
+  toastMsg.textContent = message;
+
+  toast.classList.add('show');
+
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.classList.remove('show');
+  }, 4000);
+}
+
+// Alert banner in Modal
+function showAuthAlert(message, type = 'error') {
+  const alert = document.getElementById('auth-alert');
+  if (!alert) return;
+
+  alert.className = `auth-alert-banner ${type}`;
+  alert.innerHTML = `<span>${type === 'error' ? '⚠️' : '✅'}</span><span>${message}</span>`;
+}
+
+function hideAuthAlert() {
+  const alert = document.getElementById('auth-alert');
+  if (alert) {
+    alert.style.display = 'none';
+    alert.innerHTML = '';
   }
 }
 

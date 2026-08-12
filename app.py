@@ -2,6 +2,9 @@ import os
 import sys
 import json
 import math
+import hashlib
+import secrets
+import time
 import numpy as np
 import pandas as pd
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -10,6 +13,107 @@ from urllib.parse import parse_qs, urlparse
 # Set working directory to project folder
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(BASE_DIR)
+
+# User Database & Session Store Setup
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
+USERS_FILE = os.path.join(DATA_DIR, 'users.json')
+
+# Active sessions store: token -> { user_id, email, role, expires_at }
+ACTIVE_SESSIONS = {}
+
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+def get_default_users():
+    return [
+        {
+            "id": "STU-2026-081",
+            "name": "Alex Turner",
+            "email": "student@demo.edu",
+            "password_hash": hash_password("student123"),
+            "role": "student",
+            "avatar": "🧑‍🎓",
+            "grade_level": "Undergraduate Year 2",
+            "major": "Computer Science & AI",
+            "created_at": "2026-01-15T09:00:00Z"
+        },
+        {
+            "id": "FAC-9041",
+            "name": "Prof. Eleanor Vance",
+            "email": "teacher@demo.edu",
+            "password_hash": hash_password("teacher123"),
+            "role": "teacher",
+            "avatar": "👨‍🏫",
+            "department": "Academic Counseling & Statistics",
+            "created_at": "2025-08-10T10:30:00Z"
+        },
+        {
+            "id": "ADM-1001",
+            "name": "Dean Arthur Davis",
+            "email": "admin@demo.edu",
+            "password_hash": hash_password("admin123"),
+            "role": "admin",
+            "avatar": "🛡️",
+            "department": "Academic Affairs & Administration",
+            "created_at": "2025-01-01T08:00:00Z"
+        }
+    ]
+
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        default_users = get_default_users()
+        save_users(default_users)
+        return default_users
+    try:
+        with open(USERS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Notice: Error loading users.json ({e}). Rebuilding defaults.")
+        default_users = get_default_users()
+        save_users(default_users)
+        return default_users
+
+def save_users(users_list):
+    try:
+        with open(USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(users_list, f, indent=2)
+    except Exception as e:
+        print(f"Notice: Error saving users.json: {e}")
+
+# Initialize users on startup
+load_users()
+
+def sanitize_user(user_dict):
+    """Return user dict without password hash for safe API responses"""
+    safe_user = dict(user_dict)
+    safe_user.pop('password_hash', None)
+    return safe_user
+
+def create_session(user_dict):
+    token = secrets.token_hex(24)
+    ACTIVE_SESSIONS[token] = {
+        "user_id": user_dict["id"],
+        "email": user_dict["email"],
+        "name": user_dict["name"],
+        "role": user_dict["role"],
+        "avatar": user_dict.get("avatar", "👤"),
+        "expires_at": time.time() + (86400 * 7) # 7 days session
+    }
+    return token
+
+def get_session_user(token):
+    if not token or token not in ACTIVE_SESSIONS:
+        return None
+    session_data = ACTIVE_SESSIONS[token]
+    if time.time() > session_data.get("expires_at", 0):
+        del ACTIVE_SESSIONS[token]
+        return None
+    users = load_users()
+    for u in users:
+        if u["id"] == session_data["user_id"]:
+            return sanitize_user(u)
+    return None
 
 # Load metadata.json if available
 METADATA_PATH = os.path.join(BASE_DIR, 'models', 'metadata.json')
@@ -334,6 +438,37 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "healthy", "service": "Student Performance Predictor API (Pandas/NumPy)"}).encode('utf-8'))
             return
+
+        elif parsed_path.path == '/api/auth/demo-users':
+            users = load_users()
+            sanitized = [sanitize_user(u) for u in users]
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"demo_users": sanitized}).encode('utf-8'))
+            return
+
+        elif parsed_path.path == '/api/auth/me':
+            auth_header = self.headers.get('Authorization', '')
+            token = None
+            if auth_header.startswith('Bearer '):
+                token = auth_header.split(' ', 1)[1].strip()
+            else:
+                qs = parse_qs(parsed_path.query)
+                token = qs.get('token', [None])[0]
+
+            user = get_session_user(token)
+            if user:
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"authenticated": True, "user": user}).encode('utf-8'))
+            else:
+                self.send_response(401)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"authenticated": False, "error": "Invalid or expired session token"}).encode('utf-8'))
+            return
             
         # Default to static files serving
         return super().do_GET()
@@ -348,7 +483,137 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
         except Exception:
             post_data = {}
 
-        if parsed_path.path == '/api/predict':
+        # 1. Login Endpoint
+        if parsed_path.path == '/api/auth/login':
+            email = str(post_data.get('email', '')).strip().lower()
+            password = str(post_data.get('password', ''))
+            
+            if not email or not password:
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Email and password are required."}).encode('utf-8'))
+                return
+
+            pw_hash = hash_password(password)
+            users = load_users()
+            matched_user = None
+            for u in users:
+                if u.get('email', '').lower() == email and u.get('password_hash') == pw_hash:
+                    matched_user = u
+                    break
+
+            if matched_user:
+                token = create_session(matched_user)
+                safe_user = sanitize_user(matched_user)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "success": True,
+                    "token": token,
+                    "user": safe_user,
+                    "message": f"Welcome back, {safe_user['name']}!"
+                }).encode('utf-8'))
+            else:
+                self.send_response(401)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "success": False,
+                    "error": "Invalid email or password. Please verify your credentials."
+                }).encode('utf-8'))
+            return
+
+        # 2. Register Endpoint
+        elif parsed_path.path == '/api/auth/register':
+            name = str(post_data.get('name', '')).strip()
+            email = str(post_data.get('email', '')).strip().lower()
+            password = str(post_data.get('password', ''))
+            role = str(post_data.get('role', 'student')).strip().lower()
+            grade_level = str(post_data.get('grade_level', 'Undergraduate Year 1')).strip()
+            department = str(post_data.get('department', 'Academic Studies')).strip()
+
+            if not name or not email or not password:
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Name, email, and password are required."}).encode('utf-8'))
+                return
+
+            if len(password) < 6:
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Password must be at least 6 characters long."}).encode('utf-8'))
+                return
+
+            if role not in ['student', 'teacher', 'admin']:
+                role = 'student'
+
+            users = load_users()
+            for u in users:
+                if u.get('email', '').lower() == email:
+                    self.send_response(409)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": False, "error": "An account with this email address already exists."}).encode('utf-8'))
+                    return
+
+            # Create new user record
+            prefix = "STU" if role == "student" else ("FAC" if role == "teacher" else "ADM")
+            new_id = f"{prefix}-{secrets.token_hex(3).upper()}"
+            avatar = "🧑‍🎓" if role == "student" else ("👨‍🏫" if role == "teacher" else "🛡️")
+
+            new_user = {
+                "id": new_id,
+                "name": name,
+                "email": email,
+                "password_hash": hash_password(password),
+                "role": role,
+                "avatar": avatar,
+                "grade_level": grade_level if role == "student" else None,
+                "department": department if role != "student" else None,
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            }
+
+            users.append(new_user)
+            save_users(users)
+
+            token = create_session(new_user)
+            safe_user = sanitize_user(new_user)
+
+            self.send_response(201)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "success": True,
+                "token": token,
+                "user": safe_user,
+                "message": f"Account created successfully. Welcome, {name}!"
+            }).encode('utf-8'))
+            return
+
+        # 3. Logout Endpoint
+        elif parsed_path.path == '/api/auth/logout':
+            auth_header = self.headers.get('Authorization', '')
+            token = None
+            if auth_header.startswith('Bearer '):
+                token = auth_header.split(' ', 1)[1].strip()
+            else:
+                token = post_data.get('token')
+
+            if token and token in ACTIVE_SESSIONS:
+                del ACTIVE_SESSIONS[token]
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True, "message": "Logged out successfully"}).encode('utf-8'))
+            return
+
+        # 4. Predict Single
+        elif parsed_path.path == '/api/predict':
             result = calculate_student_prediction(post_data)
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -356,6 +621,7 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(result).encode('utf-8'))
             return
 
+        # 5. Predict Batch
         elif parsed_path.path == '/api/predict-batch':
             students = post_data.get('students', [])
             batch_results = [calculate_student_prediction(st) for st in students]
@@ -386,7 +652,6 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(response).encode('utf-8'))
             return
-
 
         self.send_response(404)
         self.send_header('Content-Type', 'application/json')

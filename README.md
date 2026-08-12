@@ -46,15 +46,27 @@ An end-to-end, production-ready web application designed for academic performanc
   - `stress_level`: Self-reported stress scale (1 to 10)
   - `parent_education`, `extracurricular`, `internet_access`
 
-### 2. ⚡ Backend API (`app.py`)
-- **API Endpoints**:
+### 2. ⚡ Backend API & Authentication (`app.py`)
+- **Core API Endpoints**:
   - `POST /api/predict`: Returns predicted score, letter grade, pass/fail status, confidence rating, and tailored improvement advice.
   - `POST /api/predict-batch`: Evaluates cohort array or parsed CSV files and calculates pass rate statistics.
   - `GET /api/model-info`: Serves feature importances, dataset baseline statistics, and grade distribution.
   - `GET /api/health`: Health-check endpoint for server monitoring.
+- **Authentication Endpoints**:
+  - `POST /api/auth/login`: Authenticates credentials and returns user profile + session bearer token.
+  - `POST /api/auth/register`: Creates new user account with assigned role (Student / Teacher / Admin).
+  - `GET /api/auth/me`: Validates session token and returns active user details.
+  - `POST /api/auth/logout`: Clears session token.
+  - `GET /api/auth/demo-users`: Serves pre-configured demo account profiles.
 
-### 3. 🎨 UI/UX Design & Frontend Engineering (`index.html`, `styles.css`, `app.js`)
+### 3. 🔐 User Roles & Pre-configured Demo Accounts
+- 🧑‍🎓 **Student Demo**: `student@demo.edu` / `student123` (Alex Turner - Undergraduate Y2)
+- 👨‍🏫 **Teacher / Counselor Demo**: `teacher@demo.edu` / `teacher123` (Prof. Eleanor Vance - Academic Counseling)
+- 🛡️ **Dean / Admin Demo**: `admin@demo.edu` / `admin123` (Dean Arthur Davis - Administration)
+
+### 4. 🎨 UI/UX Design & Frontend Engineering (`index.html`, `styles.css`, `app.js`)
 - **Glassmorphic Design System**: Modern dark theme with CSS custom property design tokens, Google Fonts (*Outfit* and *Inter*), vibrant accents (`#6366f1`, `#8b5cf6`, `#10b981`), and responsive layouts.
+- **Role-Based Auth Widget & Modal**: Header user profile trigger with dropdown menu, 1-click demo login selector chips, show/hide password toggle, and tabbed sign-in/registration.
 - **Interactive Score Gauge**: SVG radial animated gauge displaying target score and letter grade badge.
 - **"What-If" Live Simulator**: Dynamic slider calculations showing instant score delta changes.
 - **Chart.js Analytics**: Visualizations for Feature Importance horizontal bars, Cohort Grade Distribution doughnut, and Correlation scatter plots.
