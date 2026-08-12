@@ -175,11 +175,11 @@ def init_db():
     demo_accounts = [
         {
             "id": "STU-2026-081",
-            "name": "Alex Turner",
+            "name": "Student User",
             "email": "student@demo.edu",
             "password": "student123",
             "role": "student",
-            "avatar": "🧑‍🎓",
+            "avatar": "👤",
             "grade_level": "Undergraduate Year 2",
             "major": "Computer Science & AI"
         },
@@ -219,7 +219,8 @@ def init_db():
             new_user.set_password(acc["password"])
             session.add(new_user)
         else:
-            # Ensure Werkzeug password hash is up to date
+            user.name = acc["name"]
+            user.avatar = acc["avatar"]
             user.set_password(acc["password"])
 
     session.commit()
@@ -230,7 +231,7 @@ def init_db():
             PredictionRecord(
                 user_id="STU-2026-081",
                 student_id="STU-2026-081",
-                student_name="Alex Turner",
+                student_name="Student",
                 study_hours=24.0,
                 attendance=92.0,
                 previous_score=84.0,
@@ -253,7 +254,7 @@ def init_db():
             PredictionRecord(
                 user_id="STU-2026-081",
                 student_id="STU-2026-081",
-                student_name="Alex Turner",
+                student_name="Student",
                 study_hours=18.0,
                 attendance=85.0,
                 previous_score=75.0,

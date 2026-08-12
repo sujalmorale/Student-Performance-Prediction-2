@@ -420,8 +420,8 @@ async function submitPredictionForm() {
     }
     const payload = {
       ...formData,
-      student_name: currentUser ? currentUser.name : 'Alex Turner',
-      student_id: currentUser ? currentUser.id : 'STU-2026-081',
+      student_name: currentUser ? currentUser.name : 'Student',
+      student_id: currentUser ? currentUser.id : 'STU-ID',
       user_id: currentUser ? currentUser.id : null
     };
 
@@ -2014,7 +2014,7 @@ async function loadDatabaseHistory(showNotification = true) {
             <td style="font-weight:700; color:var(--text-dim);">#${r.id}</td>
             <td style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">${r.created_at || 'Just now'}</td>
             <td>
-              <strong style="color:var(--text-main); font-size:0.86rem;">${r.student_name || 'Alex Turner'}</strong>
+              <strong style="color:var(--text-main); font-size:0.86rem;">${r.student_name || 'Student'}</strong>
               <div style="font-size:0.72rem; color:var(--text-dim);">${r.student_id || 'STU-ID'}</div>
             </td>
             <td>${r.study_hours}h</td>

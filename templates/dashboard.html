@@ -60,9 +60,9 @@
         <!-- Authenticated User Profile Pill & Dropdown -->
         <div class="auth-widget" id="auth-widget">
           <div class="user-profile-trigger" id="user-profile-trigger" onclick="toggleUserDropdown(event)">
-            <div class="user-avatar-badge" id="user-avatar-badge">{{ current_user.avatar or '🧑‍🎓' }}</div>
+            <div class="user-avatar-badge" id="user-avatar-badge">{{ current_user.avatar or '👤' }}</div>
             <div class="user-profile-details">
-              <span class="user-profile-name" id="user-name-display">{{ current_user.name or 'Alex Turner' }}</span>
+              <span class="user-profile-name" id="user-name-display">{{ current_user.name or 'User' }}</span>
               <span class="user-role-tag role-{{ current_user.role or 'student' }}" id="user-role-tag">{{ current_user.role|capitalize if current_user else 'Student' }}</span>
             </div>
             <svg class="user-trigger-chevron" width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
@@ -71,16 +71,16 @@
           <!-- User Dropdown Menu -->
           <div class="user-dropdown-menu" id="user-dropdown-menu">
             <div class="dropdown-user-header">
-              <div class="dropdown-user-avatar" id="dropdown-user-avatar">{{ current_user.avatar or '🧑‍🎓' }}</div>
+              <div class="dropdown-user-avatar" id="dropdown-user-avatar">{{ current_user.avatar or '👤' }}</div>
               <div>
-                <div class="dropdown-meta-name" id="dropdown-user-name">{{ current_user.name or 'Alex Turner' }}</div>
-                <div class="dropdown-meta-email" id="dropdown-user-email">{{ current_user.email or 'student@demo.edu' }}</div>
+                <div class="dropdown-meta-name" id="dropdown-user-name">{{ current_user.name or 'User' }}</div>
+                <div class="dropdown-meta-email" id="dropdown-user-email">{{ current_user.email or '' }}</div>
               </div>
             </div>
             <div class="dropdown-info-list">
               <div class="dropdown-info-row">
                 <span>Account ID</span>
-                <span id="dropdown-user-id">{{ current_user.id or 'STU-2026-081' }}</span>
+                <span id="dropdown-user-id">{{ current_user.id or 'ID-001' }}</span>
               </div>
               <div class="dropdown-info-row">
                 <span>Role / Access</span>

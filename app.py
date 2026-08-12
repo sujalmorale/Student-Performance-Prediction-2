@@ -608,7 +608,7 @@ def predict():
         record = PredictionRecord(
             user_id=user.id if user else data.get('user_id'),
             student_id=data.get('student_id', user.id if user else 'STU-CUSTOM'),
-            student_name=data.get('student_name', user.name if user else 'Alex Turner'),
+            student_name=data.get('student_name', user.name if user else 'Student'),
             study_hours=float(data.get('study_hours', 18)),
             attendance=float(data.get('attendance', 85)),
             previous_score=float(data.get('previous_score', 75)),
