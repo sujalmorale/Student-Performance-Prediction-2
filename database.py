@@ -1,8 +1,8 @@
 import os
 import time
-import hashlib
 import json
 from datetime import datetime
+from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import create_engine, Column, Integer, String, Float, Text, DateTime, Boolean, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, scoped_session, relationship
@@ -20,9 +20,6 @@ db_session = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind
 Base = declarative_base()
 Base.query = db_session.query_property()
 
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode('utf-8')).hexdigest()
-
 class User(Base):
     __tablename__ = 'users'
 
@@ -30,7 +27,7 @@ class User(Base):
     name = Column(String(100), nullable=False)
     email = Column(String(120), unique=True, nullable=False, index=True)
     password_hash = Column(String(256), nullable=False)
-    role = Column(String(20), default='student', index=True) # student, teacher, admin
+    role = Column(String(20), default='student', index=True) # 'student', 'teacher', 'admin'
     avatar = Column(String(20), default='🧑‍🎓')
     grade_level = Column(String(50), nullable=True)
     major = Column(String(100), nullable=True)
@@ -39,6 +36,12 @@ class User(Base):
 
     # Relationships
     predictions = relationship('PredictionRecord', back_populates='user', cascade='all, delete-orphan')
+
+    def set_password(self, password: str):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        return check_password_hash(self.password_hash, password)
 
     def to_dict(self):
         return {
@@ -95,7 +98,7 @@ class PredictionRecord(Base):
     fail_probability = Column(Float, nullable=False)
     confidence_score = Column(Float, default=92.0)
     
-    # Detailed JSON payload (recommendations, trends, strong/weak areas)
+    # Detailed JSON payload
     details_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
@@ -165,47 +168,64 @@ class CounselingLog(Base):
         }
 
 def init_db():
-    """Create tables and seed initial demo accounts & sample data"""
+    """Create tables and ensure demo accounts with Werkzeug password hashing"""
     Base.metadata.create_all(bind=engine)
     session = db_session()
 
-    # Check if demo users exist
-    if session.query(User).count() == 0:
-        demo_users = [
-            User(
-                id="STU-2026-081",
-                name="Alex Turner",
-                email="student@demo.edu",
-                password_hash=hash_password("student123"),
-                role="student",
-                avatar="🧑‍🎓",
-                grade_level="Undergraduate Year 2",
-                major="Computer Science & AI"
-            ),
-            User(
-                id="FAC-9041",
-                name="Prof. Eleanor Vance",
-                email="teacher@demo.edu",
-                password_hash=hash_password("teacher123"),
-                role="teacher",
-                avatar="👨‍🏫",
-                department="Academic Counseling & Statistics"
-            ),
-            User(
-                id="ADM-1001",
-                name="Dean Arthur Davis",
-                email="admin@demo.edu",
-                password_hash=hash_password("admin123"),
-                role="admin",
-                avatar="🛡️",
-                department="Academic Affairs & Administration"
-            )
-        ]
-        session.add_all(demo_users)
-        session.commit()
-        print("[OK] Database initialized with default demo accounts.")
+    demo_accounts = [
+        {
+            "id": "STU-2026-081",
+            "name": "Alex Turner",
+            "email": "student@demo.edu",
+            "password": "student123",
+            "role": "student",
+            "avatar": "🧑‍🎓",
+            "grade_level": "Undergraduate Year 2",
+            "major": "Computer Science & AI"
+        },
+        {
+            "id": "FAC-9041",
+            "name": "Prof. Eleanor Vance",
+            "email": "teacher@demo.edu",
+            "password": "teacher123",
+            "role": "teacher",
+            "avatar": "👨‍🏫",
+            "department": "Academic Counseling & Statistics"
+        },
+        {
+            "id": "ADM-1001",
+            "name": "Dean Arthur Davis",
+            "email": "admin@demo.edu",
+            "password": "admin123",
+            "role": "admin",
+            "avatar": "🛡️",
+            "department": "Academic Affairs & Administration"
+        }
+    ]
 
-        # Seed sample historical predictions
+    for acc in demo_accounts:
+        user = session.query(User).filter_by(email=acc["email"]).first()
+        if not user:
+            new_user = User(
+                id=acc["id"],
+                name=acc["name"],
+                email=acc["email"],
+                role=acc["role"],
+                avatar=acc["avatar"],
+                grade_level=acc.get("grade_level"),
+                major=acc.get("major"),
+                department=acc.get("department")
+            )
+            new_user.set_password(acc["password"])
+            session.add(new_user)
+        else:
+            # Ensure Werkzeug password hash is up to date
+            user.set_password(acc["password"])
+
+    session.commit()
+
+    # Seed sample prediction records if empty
+    if session.query(PredictionRecord).count() == 0:
         sample_records = [
             PredictionRecord(
                 user_id="STU-2026-081",
@@ -256,10 +276,9 @@ def init_db():
         ]
         session.add_all(sample_records)
         session.commit()
-        print("[OK] Database seeded with initial student prediction history.")
 
     session.close()
 
 if __name__ == '__main__':
     init_db()
-    print("Database tables & initial records ready in:", DB_PATH)
+    print("[OK] Database tables & Werkzeug auth models ready in:", DB_PATH)
